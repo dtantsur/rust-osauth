@@ -1,0 +1,33 @@
+[package]
+
+name = "osauth"
+description = "Asynchronous OpenStack session and authentication"
+version = "0.0.0"
+authors = ["Dmitry Tantsur <divius.inside@gmail.com>"]
+homepage = "https://github.com/dtantsur/rust-osauth"
+repository = "https://github.com/dtantsur/rust-osauth"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = ["api", "cloud", "openstack"]
+categories = ["api-bindings"]
+edition = "2018"
+
+[dependencies]
+
+chrono = { version = "^0.4", features = ["serde"] }
+dirs = "^1.0"
+futures = "^0.1"
+log = "^0.4"
+reqwest = "^0.9"
+serde = "^1.0"
+serde_derive = "^1.0"
+serde_json = "^1.0"
+serde_yaml = "^0.8"
+
+[lib]
+
+name = "osauth"
+path = "src/lib.rs"
+
+[badges]
+travis-ci = { repository = "dtantsur/rust-osauth" }
