@@ -6,6 +6,7 @@ version = "0.0.0"
 authors = ["Dmitry Tantsur <divius.inside@gmail.com>"]
 homepage = "https://github.com/dtantsur/rust-osauth"
 repository = "https://github.com/dtantsur/rust-osauth"
+documentation = "https://docs.rs/osauth"
 readme = "README.md"
 license = "Apache-2.0"
 keywords = ["api", "cloud", "openstack"]
