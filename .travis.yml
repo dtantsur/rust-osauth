@@ -1,0 +1,13 @@
+language: rust
+jobs:
+  allow_failures:
+    - script: cargo clippy --verbose --package osauth -- -D warnings
+  include:
+    - install: rustup component add rustfmt
+      script: cargo fmt -- --check
+      name: "Check formatting"
+    - install: rustup component add clippy
+      script: cargo clippy --verbose --package osauth -- -D warnings
+      name: "Check clippy warnings (non-voting)"
+    - script: cargo test --verbose
+      name: "Run unit tests with default features"
