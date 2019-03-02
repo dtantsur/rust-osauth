@@ -152,7 +152,7 @@ impl Session {
         let ep = auth_method.default_endpoint_interface();
         Session {
             auth: Box::new(auth_method),
-            cached_info: cache::MapCache::new(),
+            cached_info: cache::MapCache::default(),
             endpoint_interface: ep,
         }
     }
@@ -164,7 +164,7 @@ impl Session {
     where
         S: Into<String>,
     {
-        self.cached_info = cache::MapCache::new();
+        self.cached_info = cache::MapCache::default();
         self.endpoint_interface = endpoint_interface.into();
     }
 

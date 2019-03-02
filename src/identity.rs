@@ -188,11 +188,7 @@ impl Password {
     }
 
     fn do_refresh<'auth>(&'auth self) -> impl Future<Item = (), Error = Error> + 'auth {
-        if self.cached_token.validate(|val| {
-            let validity_time_left = val.body.expires_at.signed_duration_since(Local::now());
-            trace!("Token is valid for {:?}", validity_time_left);
-            validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
-        }) {
+        if self.cached_token.validate(token_alive) {
             future::Either::A(future::ok(()))
         } else {
             future::Either::B(
@@ -201,7 +197,7 @@ impl Password {
                     .json(&self.body)
                     .header(CONTENT_TYPE, "application/json")
                     .send_checked()
-                    .and_then(|resp| token_from_response(resp))
+                    .and_then(token_from_response)
                     .map(move |token| {
                         self.cached_token.set(token.clone());
                     }),
@@ -225,6 +221,13 @@ impl Password {
                 .unwrap()
         })
     }
+}
+
+#[inline]
+fn token_alive(value: &Token) -> bool {
+    let validity_time_left = value.body.expires_at.signed_duration_since(Local::now());
+    trace!("Token is valid for {:?}", validity_time_left);
+    validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
 }
 
 impl AuthType for Password {

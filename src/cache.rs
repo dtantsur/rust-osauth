@@ -62,12 +62,13 @@ impl<T> ValueCache<T> {
     }
 }
 
-impl<K: Hash + Eq, V> MapCache<K, V> {
-    /// Create a cache.
-    pub fn new() -> MapCache<K, V> {
+impl<K: Hash + Eq, V> Default for MapCache<K, V> {
+    fn default() -> MapCache<K, V> {
         MapCache(RefCell::new(HashMap::new()))
     }
+}
 
+impl<K: Hash + Eq, V> MapCache<K, V> {
     /// Extract a part of the value.
     #[inline]
     pub fn extract<F, R>(&self, key: &K, filter: F) -> Option<R>
