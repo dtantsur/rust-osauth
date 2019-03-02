@@ -84,33 +84,36 @@ pub enum ErrorKind {
 #[derive(Debug, Clone)]
 pub struct Error {
     kind: ErrorKind,
+    message: String,
     status: Option<StatusCode>,
-    message: Option<String>,
 }
 
 impl Error {
-    pub(crate) fn new<S: Into<String>>(kind: ErrorKind, message: S) -> Error {
+    /// Create a new error of the provided kind.
+    #[inline]
+    pub fn new<S: Into<String>>(kind: ErrorKind, message: S) -> Error {
         Error {
             kind,
+            message: message.into(),
             status: None,
-            message: Some(message.into()),
         }
     }
 
-    /// Create with providing all details.
-    pub(crate) fn new_with_details(
-        kind: ErrorKind,
-        status: Option<StatusCode>,
-        message: Option<String>,
-    ) -> Error {
-        Error {
-            kind,
-            status,
-            message,
-        }
+    /// Add an HTTP status code to the error.
+    #[inline]
+    pub fn set_status(&mut self, status: StatusCode) {
+        self.status = Some(status);
+    }
+
+    /// Add an HTTP status code to the error.
+    #[inline]
+    pub fn with_status(mut self, status: StatusCode) -> Self {
+        self.set_status(status);
+        self
     }
 
     /// Error kind.
+    #[inline]
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }
@@ -127,6 +130,7 @@ impl Error {
 impl ErrorKind {
     /// Short description of the error kind.
     #[allow(clippy::trivially_copy_pass_by_ref)]
+    #[inline]
     pub fn description(&self) -> &'static str {
         match self {
             ErrorKind::AuthenticationFailed => "Failed to authenticate",
@@ -156,13 +160,7 @@ impl fmt::Display for ErrorKind {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.kind)?;
-
-        if let Some(ref msg) = self.message {
-            write!(f, ": {}", msg)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}: {}", self.kind, self.message)
     }
 }
 
@@ -199,12 +197,30 @@ impl From<HttpClientError> for Error {
             .map(From::from)
             .unwrap_or(ErrorKind::ProtocolError);
 
-        Error::new_with_details(kind, value.status(), Some(msg))
+        let error = Error::new(kind, msg);
+        if let Some(status) = value.status() {
+            error.with_status(status)
+        } else {
+            error
+        }
     }
 }
 
 impl From<UrlError> for Error {
     fn from(value: UrlError) -> Error {
         Error::new(ErrorKind::InvalidInput, value.to_string())
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::{Error, ErrorKind};
+
+    #[test]
+    fn test_error_display() {
+        let error = Error::new(ErrorKind::InvalidInput, "boom");
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+        let s = format!("{}", error);
+        assert_eq!(&s, "Input value(s) are invalid or missing: boom");
     }
 }

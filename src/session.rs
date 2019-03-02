@@ -118,11 +118,7 @@ impl RequestBuilderExt for RequestBuilder {
                 future::Either::A(extract_message(resp).and_then(move |message| {
                     trace!("HTTP request returned {}; error: {:?}", status, message);
 
-                    future::err(Error::new_with_details(
-                        status.into(),
-                        Some(status),
-                        Some(message),
-                    ))
+                    future::err(Error::new(status.into(), message).with_status(status))
                 }))
             } else {
                 trace!("HTTP request to {} returned {}", resp.url(), resp.status());
