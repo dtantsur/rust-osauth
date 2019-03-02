@@ -90,11 +90,3 @@ impl<K: Hash + Eq, V> MapCache<K, V> {
         let _ = self.0.borrow_mut().insert(key, value);
     }
 }
-
-impl<K: Hash + Eq, V: Clone> MapCache<K, V> {
-    /// Get a clone of the value.
-    #[inline]
-    pub fn get(&self, key: &K) -> Option<V> {
-        self.0.borrow().get(key).cloned()
-    }
-}

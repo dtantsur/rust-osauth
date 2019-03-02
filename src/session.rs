@@ -237,6 +237,38 @@ impl Session {
         })
     }
 
+    /// Pick the highest API version supported by the service.
+    pub fn pick_api_version<'session, Srv: ServiceType + 'session>(
+        &'session self,
+        versions: &'session [ApiVersion],
+    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + 'session {
+        self.ensure_service_info::<Srv>().map(move |infos| {
+            infos
+                .extract(&Srv::catalog_type(), |info| {
+                    versions
+                        .iter()
+                        .filter(|item| info.supports_api_version(**item))
+                        .max()
+                        .cloned()
+                })
+                .expect("No cache record after caching")
+        })
+    }
+
+    /// Check if the service supports the API version.
+    pub fn supports_api_version<'session, Srv: ServiceType + 'session>(
+        &'session self,
+        version: ApiVersion,
+    ) -> impl Future<Item = bool, Error = Error> + 'session {
+        self.ensure_service_info::<Srv>().map(move |infos| {
+            infos
+                .extract(&Srv::catalog_type(), |info| {
+                    info.supports_api_version(version)
+                })
+                .expect("No cache record after caching")
+        })
+    }
+
     /// Make an HTTP request to the given service.
     pub fn request<'session, Srv: ServiceType + 'session>(
         &'session self,
