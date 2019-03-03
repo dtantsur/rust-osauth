@@ -27,13 +27,13 @@ pub struct ValueCache<T>(RwLock<Option<T>>);
 #[derive(Debug)]
 pub struct MapCache<K: Hash + Eq, V>(RwLock<HashMap<K, V>>);
 
-impl<T> ValueCache<T> {
-    /// Create a cache.
-    #[inline]
-    pub fn new(value: Option<T>) -> ValueCache<T> {
-        ValueCache(RwLock::new(value))
+impl<T> Default for ValueCache<T> {
+    fn default() -> ValueCache<T> {
+        ValueCache(RwLock::new(None))
     }
+}
 
+impl<T> ValueCache<T> {
     /// Ensure that the cached value is valid.
     ///
     /// Returns `true` if the value exists and passes the check.
@@ -64,12 +64,6 @@ impl<T> ValueCache<T> {
     pub fn set(&self, value: T) {
         let mut guard = self.0.write().expect("Cache lock is poisoned");
         *guard = Some(value)
-    }
-
-    /// Drop the value.
-    #[inline]
-    pub fn invalidate(&mut self) {
-        *self.0.get_mut().expect("Cache lock is poisoned") = None;
     }
 }
 

@@ -42,24 +42,24 @@ pub trait AuthType: BoxedClone + Debug + Sync {
     }
 
     /// Get a URL for the requested service.
-    fn get_endpoint<'auth>(
-        &'auth self,
+    fn get_endpoint(
+        &self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + Send + 'auth>;
+    ) -> Box<Future<Item = Url, Error = Error> + Send>;
 
     /// Create an authenticated request.
-    fn request<'auth>(
-        &'auth self,
+    fn request(
+        &self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send + 'auth>;
+    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send>;
 
     /// Invalidate any cached information.
     fn invalidate(&mut self);
 
     /// Refresh the authentication (renew the token, etc).
-    fn refresh<'auth>(&'auth mut self) -> Box<Future<Item = (), Error = Error> + Send + 'auth>;
+    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error> + Send>;
 }
 
 /// Helper trait to allow cloning of sessions.

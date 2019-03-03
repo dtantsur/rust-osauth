@@ -17,6 +17,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use chrono::{Duration, Local};
 use futures::future;
@@ -66,10 +67,10 @@ pub trait Identity {
 pub struct Password {
     client: Client,
     auth_url: Url,
-    region: Option<String>,
     body: protocol::ProjectScopedAuthRoot,
     token_endpoint: String,
-    cached_token: ValueCache<Token>,
+    region: Option<String>,
+    cached_token: Arc<ValueCache<Token>>,
 }
 
 impl Identity for Password {
@@ -130,7 +131,7 @@ impl Password {
             region: None,
             body,
             token_endpoint,
-            cached_token: ValueCache::new(None),
+            cached_token: Arc::new(ValueCache::default()),
         })
     }
 
@@ -187,10 +188,11 @@ impl Password {
         self
     }
 
-    fn do_refresh<'auth>(&'auth self) -> impl Future<Item = (), Error = Error> + 'auth {
+    fn do_refresh(&self) -> impl Future<Item = (), Error = Error> {
         if self.cached_token.validate(token_alive) {
             future::Either::A(future::ok(()))
         } else {
+            let cached_token = Arc::clone(&self.cached_token);
             future::Either::B(
                 self.client
                     .post(&self.token_endpoint)
@@ -199,27 +201,24 @@ impl Password {
                     .send_checked()
                     .and_then(token_from_response)
                     .map(move |token| {
-                        self.cached_token.set(token.clone());
+                        cached_token.set(token.clone());
                     }),
             )
         }
     }
 
     #[inline]
-    fn get_token<'auth>(&'auth self) -> impl Future<Item = String, Error = Error> + 'auth {
+    fn get_token(&self) -> impl Future<Item = String, Error = Error> {
+        let cached_token = Arc::clone(&self.cached_token);
         self.do_refresh()
-            .map(move |()| self.cached_token.extract(|t| t.value.clone()).unwrap())
+            .map(move |()| cached_token.extract(|t| t.value.clone()).unwrap())
     }
 
     #[inline]
-    fn get_catalog<'auth>(
-        &'auth self,
-    ) -> impl Future<Item = Vec<protocol::CatalogRecord>, Error = Error> + 'auth {
-        self.do_refresh().map(move |()| {
-            self.cached_token
-                .extract(|t| t.body.catalog.clone())
-                .unwrap()
-        })
+    fn get_catalog(&self) -> impl Future<Item = Vec<protocol::CatalogRecord>, Error = Error> {
+        let cached_token = Arc::clone(&self.cached_token);
+        self.do_refresh()
+            .map(move |()| cached_token.extract(|t| t.body.catalog.clone()).unwrap())
     }
 }
 
@@ -237,39 +236,41 @@ impl AuthType for Password {
     }
 
     /// Create an authenticated request.
-    fn request<'auth>(
-        &'auth self,
+    fn request(
+        &self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send + 'auth> {
-        Box::new(self.get_token().map(move |token| {
-            self.client
-                .request(method, url)
-                .header("x-auth-token", token)
-        }))
+    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send> {
+        // NOTE(dtantsur): this uses the fact that Client is implemented via Arc.
+        let client = self.client.clone();
+        Box::new(
+            self.get_token()
+                .map(move |token| client.request(method, url).header("x-auth-token", token)),
+        )
     }
 
     /// Get a URL for the requested service.
-    fn get_endpoint<'auth>(
-        &'auth self,
+    fn get_endpoint(
+        &self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + Send + 'auth> {
+    ) -> Box<Future<Item = Url, Error = Error> + Send> {
         let real_interface =
             endpoint_interface.unwrap_or_else(|| self.default_endpoint_interface());
+        let region = self.region.clone();
         debug!(
             "Requesting a catalog endpoint for service '{}', interface \
              '{}' from region {:?}",
             service_type, real_interface, self.region
         );
         Box::new(self.get_catalog().and_then(move |cat| {
-            let endp = catalog::find_endpoint(&cat, &service_type, &real_interface, &self.region)?;
+            let endp = catalog::find_endpoint(&cat, &service_type, &real_interface, &region)?;
             debug!("Received {:?} for {}", endp, service_type);
             Url::parse(&endp.url).map_err(|e| {
                 error!(
                     "Invalid URL {} received from service catalog for service \
                      '{}', interface '{}' from region {:?}: {}",
-                    endp.url, service_type, real_interface, self.region, e
+                    endp.url, service_type, real_interface, region, e
                 );
                 Error::new(
                     ErrorKind::InvalidResponse,
@@ -280,10 +281,10 @@ impl AuthType for Password {
     }
 
     fn invalidate(&mut self) {
-        self.cached_token.invalidate();
+        self.cached_token = Arc::new(ValueCache::default());
     }
 
-    fn refresh<'auth>(&'auth mut self) -> Box<Future<Item = (), Error = Error> + Send + 'auth> {
+    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error> + Send> {
         self.invalidate();
         Box::new(self.do_refresh())
     }
