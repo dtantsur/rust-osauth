@@ -82,6 +82,6 @@ mod url;
 
 pub use crate::apiversion::ApiVersion;
 pub use crate::auth::{AuthType, NoAuth};
-pub use crate::config::from_config;
+pub use crate::config::{from_config, from_env};
 pub use crate::error::{Error, ErrorKind};
-pub use crate::session::{RequestBuilderExt, Session};
+pub use crate::session::{RequestBuilderExt, ServiceType, Session};

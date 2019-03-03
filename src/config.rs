@@ -15,6 +15,7 @@
 //! Support for cloud configuration file.
 
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
@@ -124,4 +125,34 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     }
 
     Ok(Session::new(id))
+}
+
+const MISSING_ENV_VARS: &str = "Not all required environment variables were provided";
+
+#[inline]
+fn _get_env(name: &str) -> Result<String, Error> {
+    env::var(name).map_err(|_| Error::new(ErrorKind::InvalidInput, MISSING_ENV_VARS))
+}
+
+/// Create a `Session` from environment variables.
+pub fn from_env() -> Result<Session, Error> {
+    if let Ok(cloud_name) = env::var("OS_CLOUD") {
+        from_config(cloud_name)
+    } else {
+        let auth_url = _get_env("OS_AUTH_URL")?;
+        let user_name = _get_env("OS_USERNAME")?;
+        let password = _get_env("OS_PASSWORD")?;
+        let user_domain =
+            env::var("OS_USER_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
+
+        let id = Password::new(&auth_url, user_name, password, user_domain)?;
+
+        let project_name = _get_env("OS_PROJECT_NAME")?;
+        let project_domain =
+            env::var("OS_PROJECT_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
+
+        Ok(Session::new(
+            id.with_project_scope(project_name, project_domain),
+        ))
+    }
 }
