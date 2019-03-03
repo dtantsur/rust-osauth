@@ -140,7 +140,7 @@ type Cache = cache::MapCache<&'static str, ServiceInfo>;
 pub struct Session {
     auth: Arc<AuthType>,
     cached_info: Arc<Cache>,
-    endpoint_interface: String,
+    endpoint_interface: Option<String>,
 }
 
 impl Session {
@@ -149,12 +149,17 @@ impl Session {
     /// The resulting session will use the default endpoint interface (usually,
     /// public).
     pub fn new<Auth: AuthType + 'static>(auth_method: Auth) -> Session {
-        let ep = auth_method.default_endpoint_interface();
         Session {
             auth: Arc::new(auth_method),
             cached_info: Arc::new(cache::MapCache::default()),
-            endpoint_interface: ep,
+            endpoint_interface: None,
         }
+    }
+
+    /// Endpoint interface in use (if any).
+    #[inline]
+    pub fn endpoint_interface(&self) -> &Option<String> {
+        &self.endpoint_interface
     }
 
     /// Set endpoint interface to use.
@@ -166,7 +171,7 @@ impl Session {
         S: Into<String>,
     {
         self.cached_info = Arc::new(cache::MapCache::default());
-        self.endpoint_interface = endpoint_interface.into();
+        self.endpoint_interface = Some(endpoint_interface.into());
     }
 
     /// Convert this session into one using the given endpoint interface.
@@ -353,10 +358,7 @@ impl Session {
             let auth_type = Arc::clone(&self.auth);
             future::Either::B(
                 self.auth
-                    .get_endpoint(
-                        Srv::catalog_type().to_string(),
-                        Some(endpoint_interface.clone()),
-                    )
+                    .get_endpoint(Srv::catalog_type().to_string(), endpoint_interface)
                     .and_then(move |ep| ServiceInfo::fetch::<Srv>(ep, auth_type))
                     .map(move |info| {
                         cached_info.set(Srv::catalog_type(), info);

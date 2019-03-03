@@ -31,11 +31,6 @@ use super::Error;
 ///
 /// An authentication method should cache the token as long as it's valid.
 pub trait AuthType: Debug + Sync + Send {
-    /// Default endpoint interface that is used when none is provided.
-    fn default_endpoint_interface(&self) -> String {
-        String::from("public")
-    }
-
     /// Region used with this authentication (if any).
     fn region(&self) -> Option<String> {
         None

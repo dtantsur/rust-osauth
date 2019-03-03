@@ -71,6 +71,7 @@ pub struct Password {
     token_endpoint: String,
     region: Option<String>,
     cached_token: Arc<ValueCache<Token>>,
+    endpoint_interface: String,
 }
 
 impl Identity for Password {
@@ -132,6 +133,7 @@ impl Password {
             body,
             token_endpoint,
             cached_token: Arc::new(ValueCache::default()),
+            endpoint_interface: "public".to_string(),
         })
     }
 
@@ -207,6 +209,30 @@ impl Password {
         }
     }
 
+    /// The default endpoint interface.
+    #[inline]
+    pub fn default_endpoint_interface(&self) -> &String {
+        &self.endpoint_interface
+    }
+
+    /// Set the default endpoint interface to use.
+    pub fn set_default_endpoint_interface<S>(&mut self, endpoint_interface: S)
+    where
+        S: Into<String>,
+    {
+        self.endpoint_interface = endpoint_interface.into();
+    }
+
+    /// Convert this session into one using the given endpoint interface.
+    #[inline]
+    pub fn with_default_endpoint_interface<S>(mut self, endpoint_interface: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.set_default_endpoint_interface(endpoint_interface);
+        self
+    }
+
     #[inline]
     fn get_token(&self) -> impl Future<Item = String, Error = Error> {
         let cached_token = Arc::clone(&self.cached_token);
@@ -255,8 +281,7 @@ impl AuthType for Password {
         service_type: String,
         endpoint_interface: Option<String>,
     ) -> Box<Future<Item = Url, Error = Error> + Send> {
-        let real_interface =
-            endpoint_interface.unwrap_or_else(|| self.default_endpoint_interface());
+        let real_interface = endpoint_interface.unwrap_or_else(|| self.endpoint_interface.clone());
         let region = self.region.clone();
         debug!(
             "Requesting a catalog endpoint for service '{}', interface \
