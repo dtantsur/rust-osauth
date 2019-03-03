@@ -30,7 +30,7 @@ use super::Error;
 /// 2. get an endpoint URL for the given service type.
 ///
 /// An authentication method should cache the token as long as it's valid.
-pub trait AuthType: BoxedClone + Debug + Sync {
+pub trait AuthType: BoxedClone + Debug + Sync + Send {
     /// Default endpoint interface that is used when none is provided.
     fn default_endpoint_interface(&self) -> String {
         String::from("public")
@@ -55,11 +55,8 @@ pub trait AuthType: BoxedClone + Debug + Sync {
         url: Url,
     ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send>;
 
-    /// Invalidate any cached information.
-    fn invalidate(&mut self);
-
     /// Refresh the authentication (renew the token, etc).
-    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error> + Send>;
+    fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send>;
 }
 
 /// Helper trait to allow cloning of sessions.
@@ -128,9 +125,7 @@ impl AuthType for NoAuth {
         Box::new(future::ok(self.endpoint.clone()))
     }
 
-    fn invalidate(&mut self) {}
-
-    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error> + Send> {
+    fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send> {
         Box::new(future::ok(()))
     }
 }

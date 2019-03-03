@@ -188,8 +188,8 @@ impl Password {
         self
     }
 
-    fn do_refresh(&self) -> impl Future<Item = (), Error = Error> {
-        if self.cached_token.validate(token_alive) {
+    fn do_refresh(&self, force: bool) -> impl Future<Item = (), Error = Error> {
+        if !force && self.cached_token.validate(token_alive) {
             future::Either::A(future::ok(()))
         } else {
             let cached_token = Arc::clone(&self.cached_token);
@@ -210,14 +210,14 @@ impl Password {
     #[inline]
     fn get_token(&self) -> impl Future<Item = String, Error = Error> {
         let cached_token = Arc::clone(&self.cached_token);
-        self.do_refresh()
+        self.do_refresh(false)
             .map(move |()| cached_token.extract(|t| t.value.clone()).unwrap())
     }
 
     #[inline]
     fn get_catalog(&self) -> impl Future<Item = Vec<protocol::CatalogRecord>, Error = Error> {
         let cached_token = Arc::clone(&self.cached_token);
-        self.do_refresh()
+        self.do_refresh(false)
             .map(move |()| cached_token.extract(|t| t.body.catalog.clone()).unwrap())
     }
 }
@@ -280,13 +280,8 @@ impl AuthType for Password {
         }))
     }
 
-    fn invalidate(&mut self) {
-        self.cached_token = Arc::new(ValueCache::default());
-    }
-
-    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error> + Send> {
-        self.invalidate();
-        Box::new(self.do_refresh())
+    fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send> {
+        Box::new(self.do_refresh(true))
     }
 }
 

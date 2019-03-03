@@ -17,6 +17,7 @@
 #![allow(missing_docs)]
 
 use std::str::FromStr;
+use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset};
 use futures::future;
@@ -184,10 +185,10 @@ impl Version {
 
 impl Root {
     /// Fetch versioning root from a URL.
-    pub fn fetch<'auth, Srv: ServiceType + 'auth>(
+    pub fn fetch<Srv: ServiceType + 'static>(
         endpoint: Url,
-        auth: &'auth AuthType,
-    ) -> impl Future<Item = Root, Error = Error> + 'auth {
+        auth: Arc<AuthType>,
+    ) -> impl Future<Item = Root, Error = Error> {
         debug!(
             "Fetching {} service info from {}",
             Srv::catalog_type(),
@@ -255,10 +256,10 @@ impl ServiceInfo {
     }
 
     /// Generic code to extract a `ServiceInfo` from a URL.
-    pub fn fetch<'auth, Srv: ServiceType + 'auth>(
+    pub fn fetch<Srv: ServiceType + 'static>(
         endpoint: Url,
-        auth: &'auth AuthType,
-    ) -> impl Future<Item = ServiceInfo, Error = Error> + 'auth {
+        auth: Arc<AuthType>,
+    ) -> impl Future<Item = ServiceInfo, Error = Error> {
         if !Srv::version_discovery_supported() {
             debug!(
                 "Service {} does not support version discovery, using {}",
@@ -278,7 +279,7 @@ impl ServiceInfo {
         let secure = endpoint.scheme() == "https";
 
         future::Either::B(
-            Root::fetch::<Srv>(endpoint.clone(), auth)
+            Root::fetch::<Srv>(endpoint.clone(), auth.clone())
                 .or_else(move |e| {
                     if e.kind() == ErrorKind::ResourceNotFound {
                         if url::is_root(&endpoint) {

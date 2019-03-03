@@ -15,6 +15,7 @@
 //! Session structure definition.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use futures::future;
 use futures::prelude::*;
@@ -112,7 +113,6 @@ fn extract_message(resp: Response) -> impl Future<Item = String, Error = Error> 
 impl RequestBuilderExt for RequestBuilder {
     fn send_checked(self) -> Box<Future<Item = Response, Error = Error> + Send> {
         Box::new(self.send().from_err().and_then(|resp| {
-            trace!("HTTP request to {} returned {}", resp.url(), resp.status());
             let status = resp.status();
             if resp.status().is_client_error() || resp.status().is_server_error() {
                 future::Either::A(extract_message(resp).and_then(move |message| {
@@ -138,8 +138,8 @@ type Cache = cache::MapCache<&'static str, ServiceInfo>;
 /// The session object also owns the endpoint interface to use.
 #[derive(Debug, Clone)]
 pub struct Session {
-    auth: Box<AuthType>,
-    cached_info: Cache,
+    auth: Arc<AuthType>,
+    cached_info: Arc<Cache>,
     endpoint_interface: String,
 }
 
@@ -151,20 +151,21 @@ impl Session {
     pub fn new<Auth: AuthType + 'static>(auth_method: Auth) -> Session {
         let ep = auth_method.default_endpoint_interface();
         Session {
-            auth: Box::new(auth_method),
-            cached_info: cache::MapCache::default(),
+            auth: Arc::new(auth_method),
+            cached_info: Arc::new(cache::MapCache::default()),
             endpoint_interface: ep,
         }
     }
 
     /// Set endpoint interface to use.
     ///
-    /// This call clears the cached service information.
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
     pub fn set_endpoint_interface<S>(&mut self, endpoint_interface: S)
     where
         S: Into<String>,
     {
-        self.cached_info = cache::MapCache::default();
+        self.cached_info = Arc::new(cache::MapCache::default());
         self.endpoint_interface = endpoint_interface.into();
     }
 
@@ -184,22 +185,19 @@ impl Session {
         self.auth.as_ref()
     }
 
-    /// Get a mutable reference to the authentication type in use.
-    #[inline]
-    pub fn auth_type_mut(&mut self) -> &mut AuthType {
-        self.auth.as_mut()
-    }
+    /// Invalidate internal caches.
 
     /// Construct and endpoint for the given service from the path.
-    pub fn get_endpoint<'session, Srv: ServiceType + 'session>(
-        &'session self,
-        path: &'session [&str],
-    ) -> impl Future<Item = Url, Error = Error> + 'session {
+    pub fn get_endpoint<Srv: ServiceType + 'static>(
+        &self,
+        path: Vec<String>,
+    ) -> impl Future<Item = Url, Error = Error> {
+        let path_iter = path.into_iter();
         self.ensure_service_info::<Srv>().map(move |infos| {
             let endpoint = infos
                 .extract(&Srv::catalog_type(), |info| info.root_url.clone())
                 .expect("No cache record after caching");
-            url::extend(endpoint, path)
+            url::extend(endpoint, path_iter)
         })
     }
 
@@ -207,9 +205,9 @@ impl Session {
     ///
     /// Can return `IncompatibleApiVersion` if the service does not support
     /// API version discovery at all.
-    pub fn get_major_version<'session, Srv: ServiceType + 'session>(
-        &'session self,
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + 'session {
+    pub fn get_major_version<Srv: ServiceType + 'static>(
+        &self,
+    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> {
         self.ensure_service_info::<Srv>().map(|infos| {
             infos
                 .extract(&Srv::catalog_type(), |info| info.major_version)
@@ -221,9 +219,9 @@ impl Session {
     ///
     /// Returns `None` if the range cannot be determined, which usually means
     /// that microversioning is not supported.
-    pub fn get_api_versions<'session, Srv: ServiceType + 'session>(
-        &'session self,
-    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + 'session {
+    pub fn get_api_versions<Srv: ServiceType + 'static>(
+        &self,
+    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> {
         self.ensure_service_info::<Srv>().map(|infos| {
             let min_max = infos
                 .extract(&Srv::catalog_type(), |info| {
@@ -238,10 +236,10 @@ impl Session {
     }
 
     /// Pick the highest API version supported by the service.
-    pub fn pick_api_version<'session, Srv: ServiceType + 'session>(
-        &'session self,
-        versions: &'session [ApiVersion],
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + 'session {
+    pub fn pick_api_version<Srv: ServiceType + 'static>(
+        &self,
+        versions: Vec<ApiVersion>,
+    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> {
         self.ensure_service_info::<Srv>().map(move |infos| {
             infos
                 .extract(&Srv::catalog_type(), |info| {
@@ -256,10 +254,10 @@ impl Session {
     }
 
     /// Check if the service supports the API version.
-    pub fn supports_api_version<'session, Srv: ServiceType + 'session>(
-        &'session self,
+    pub fn supports_api_version<Srv: ServiceType + 'static>(
+        &self,
         version: ApiVersion,
-    ) -> impl Future<Item = bool, Error = Error> + 'session {
+    ) -> impl Future<Item = bool, Error = Error> {
         self.ensure_service_info::<Srv>().map(move |infos| {
             infos
                 .extract(&Srv::catalog_type(), |info| {
@@ -270,12 +268,13 @@ impl Session {
     }
 
     /// Make an HTTP request to the given service.
-    pub fn request<'session, Srv: ServiceType + 'session>(
-        &'session self,
+    pub fn request<Srv: ServiceType + 'static>(
+        &self,
         method: Method,
-        path: &'session [&str],
+        path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + 'session {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> {
+        let auth = Arc::clone(&self.auth);
         self.get_endpoint::<Srv>(path)
             .and_then(move |url| {
                 trace!(
@@ -284,7 +283,7 @@ impl Session {
                     url,
                     api_version
                 );
-                self.auth.request(method, url)
+                auth.request(method, url)
             })
             .and_then(move |mut builder| {
                 if let Some(version) = api_version {
@@ -299,67 +298,69 @@ impl Session {
 
     /// Start a GET request.
     #[inline]
-    pub fn get<'session, Srv: ServiceType + 'session>(
-        &'session self,
-        path: &'session [&str],
+    pub fn get<Srv: ServiceType + 'static>(
+        &self,
+        path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + 'session {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> {
         self.request::<Srv>(Method::GET, path, api_version)
     }
 
     /// Start a POST request.
     #[inline]
-    pub fn post<'session, Srv: ServiceType + 'session>(
-        &'session self,
-        path: &'session [&str],
+    pub fn post<Srv: ServiceType + 'static>(
+        &self,
+        path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + 'session {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> {
         self.request::<Srv>(Method::POST, path, api_version)
     }
 
     /// Start a PUT request.
     #[inline]
-    pub fn put<'session, Srv: ServiceType + 'session>(
-        &'session self,
-        path: &'session [&str],
+    pub fn put<Srv: ServiceType + 'static>(
+        &self,
+        path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + 'session {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> {
         self.request::<Srv>(Method::PUT, path, api_version)
     }
 
     /// Start a DELETE request.
     #[inline]
-    pub fn delete<'session, Srv: ServiceType + 'session>(
-        &'session self,
-        path: &'session [&str],
+    pub fn delete<Srv: ServiceType + 'static>(
+        &self,
+        path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + 'session {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> {
         self.request::<Srv>(Method::DELETE, path, api_version)
     }
 
-    fn ensure_service_info<'session, Srv>(
-        &'session self,
-    ) -> impl Future<Item = &'session Cache, Error = Error> + 'session
+    fn ensure_service_info<Srv>(&self) -> impl Future<Item = Arc<Cache>, Error = Error>
     where
-        Srv: ServiceType + 'session,
+        Srv: ServiceType + 'static,
     {
         if self.cached_info.is_set(&Srv::catalog_type()) {
-            future::Either::A(future::ok(&self.cached_info))
+            future::Either::A(future::ok(Arc::clone(&self.cached_info)))
         } else {
             debug!(
                 "No cached information for service {}, fetching",
                 Srv::catalog_type()
             );
+
+            let endpoint_interface = self.endpoint_interface.clone();
+            let cached_info = Arc::clone(&self.cached_info);
+            let auth_type = Arc::clone(&self.auth);
             future::Either::B(
                 self.auth
                     .get_endpoint(
                         Srv::catalog_type().to_string(),
-                        Some(self.endpoint_interface.clone()),
+                        Some(endpoint_interface.clone()),
                     )
-                    .and_then(move |ep| ServiceInfo::fetch::<Srv>(ep, self.auth_type()))
+                    .and_then(move |ep| ServiceInfo::fetch::<Srv>(ep, auth_type))
                     .map(move |info| {
-                        self.cached_info.set(Srv::catalog_type(), info);
-                        &self.cached_info
+                        cached_info.set(Srv::catalog_type(), info);
+                        cached_info
                     }),
             )
         }
@@ -376,6 +377,8 @@ pub(crate) mod test {
     use super::{ServiceType, Session};
 
     pub const URL: &str = "http://127.0.0.1:5000/";
+
+    pub const URL_WITH_SUFFIX: &str = "http://127.0.0.1:5000/v2/servers";
 
     pub fn new_simple_session(url: &str) -> Session {
         let service_info = ServiceInfo {
@@ -405,8 +408,18 @@ pub(crate) mod test {
     #[test]
     fn test_get_endpoint() {
         let s = new_simple_session(URL);
-        let ep = s.get_endpoint::<FakeService>(&[]).wait().unwrap();
+        let ep = s.get_endpoint::<FakeService>(Vec::new()).wait().unwrap();
         assert_eq!(&ep.to_string(), URL);
+    }
+
+    #[test]
+    fn test_get_endpoint2() {
+        let s = new_simple_session(URL);
+        let ep = s
+            .get_endpoint::<FakeService>(vec!["v2".to_string(), "servers".to_string()])
+            .wait()
+            .unwrap();
+        assert_eq!(&ep.to_string(), URL_WITH_SUFFIX);
     }
 
     #[test]
