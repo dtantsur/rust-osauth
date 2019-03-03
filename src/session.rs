@@ -62,10 +62,10 @@ pub trait ServiceType {
 /// Extension trait for HTTP calls with error handling.
 pub trait RequestBuilderExt {
     /// Send a request and validate the status code.
-    fn send_checked(self) -> Box<Future<Item = Response, Error = Error>>;
+    fn send_checked(self) -> Box<Future<Item = Response, Error = Error> + Send>;
 
     /// Send a request and discard the results.
-    fn commit(self) -> Box<Future<Item = (), Error = Error>>
+    fn commit(self) -> Box<Future<Item = (), Error = Error> + Send>
     where
         Self: Sized,
     {
@@ -73,7 +73,7 @@ pub trait RequestBuilderExt {
     }
 
     /// Send a request and receive a JSON back.
-    fn receive_json<T: DeserializeOwned>(self) -> Box<Future<Item = (), Error = Error>>
+    fn receive_json<T: DeserializeOwned>(self) -> Box<Future<Item = (), Error = Error> + Send>
     where
         Self: Sized,
     {
@@ -110,7 +110,7 @@ fn extract_message(resp: Response) -> impl Future<Item = String, Error = Error> 
 }
 
 impl RequestBuilderExt for RequestBuilder {
-    fn send_checked(self) -> Box<Future<Item = Response, Error = Error>> {
+    fn send_checked(self) -> Box<Future<Item = Response, Error = Error> + Send> {
         Box::new(self.send().from_err().and_then(|resp| {
             trace!("HTTP request to {} returned {}", resp.url(), resp.status());
             let status = resp.status();

@@ -46,17 +46,20 @@ pub trait AuthType: BoxedClone + Debug {
         &'auth self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + 'auth>;
+    ) -> Box<Future<Item = Url, Error = Error> + Send + 'auth>;
 
     /// Create an authenticated request.
     fn request<'auth>(
         &'auth self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + 'auth>;
+    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send + 'auth>;
+
+    /// Invalidate any cached information.
+    fn invalidate(&mut self);
 
     /// Refresh the authentication (renew the token, etc).
-    fn refresh<'auth>(&'auth mut self) -> Box<Future<Item = (), Error = Error> + 'auth>;
+    fn refresh<'auth>(&'auth mut self) -> Box<Future<Item = (), Error = Error> + Send + 'auth>;
 }
 
 /// Helper trait to allow cloning of sessions.
@@ -112,7 +115,7 @@ impl AuthType for NoAuth {
         &self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error>> {
+    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send> {
         Box::new(future::ok(self.client.request(method, url)))
     }
 
@@ -121,11 +124,13 @@ impl AuthType for NoAuth {
         &self,
         _service_type: String,
         _endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error>> {
+    ) -> Box<Future<Item = Url, Error = Error> + Send> {
         Box::new(future::ok(self.endpoint.clone()))
     }
 
-    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error>> {
+    fn invalidate(&mut self) {}
+
+    fn refresh(&mut self) -> Box<Future<Item = (), Error = Error> + Send> {
         Box::new(future::ok(()))
     }
 }

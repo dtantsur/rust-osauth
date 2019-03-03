@@ -14,23 +14,24 @@
 
 //! Caching.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::ops::Deref;
+use std::sync::RwLock;
 
-/// Cached clone-able value.
-#[derive(Debug, Clone)]
-pub struct ValueCache<T>(RefCell<Option<T>>);
+/// Cached value.
+#[derive(Debug)]
+pub struct ValueCache<T>(RwLock<Option<T>>);
 
 /// Cached map of values.
-#[derive(Debug, Clone)]
-pub struct MapCache<K: Hash + Eq, V>(RefCell<HashMap<K, V>>);
+#[derive(Debug)]
+pub struct MapCache<K: Hash + Eq, V>(RwLock<HashMap<K, V>>);
 
 impl<T> ValueCache<T> {
     /// Create a cache.
     #[inline]
     pub fn new(value: Option<T>) -> ValueCache<T> {
-        ValueCache(RefCell::new(value))
+        ValueCache(RwLock::new(value))
     }
 
     /// Ensure that the cached value is valid.
@@ -40,9 +41,11 @@ impl<T> ValueCache<T> {
     where
         F: FnOnce(&T) -> bool,
     {
-        match self.0.borrow().as_ref() {
-            Some(v) => check(v),
-            None => false,
+        let guard = self.0.read().expect("Cache lock is poisoned");
+        if let Some(ref value) = guard.deref() {
+            check(value)
+        } else {
+            false
         }
     }
 
@@ -52,19 +55,34 @@ impl<T> ValueCache<T> {
     where
         F: FnOnce(&T) -> R,
     {
-        self.0.borrow().as_ref().map(filter)
+        let guard = self.0.read().expect("Cache lock is poisoned");
+        guard.as_ref().map(filter)
     }
 
     /// Set a new value.
     #[inline]
     pub fn set(&self, value: T) {
-        *self.0.borrow_mut() = Some(value);
+        let mut guard = self.0.write().expect("Cache lock is poisoned");
+        *guard = Some(value)
+    }
+
+    /// Drop the value.
+    #[inline]
+    pub fn invalidate(&mut self) {
+        *self.0.get_mut().expect("Cache lock is poisoned") = None;
+    }
+}
+
+impl<T: Clone> Clone for ValueCache<T> {
+    fn clone(&self) -> ValueCache<T> {
+        let guard = self.0.read().expect("Cache lock is poisoned");
+        ValueCache(RwLock::new(guard.clone()))
     }
 }
 
 impl<K: Hash + Eq, V> Default for MapCache<K, V> {
     fn default() -> MapCache<K, V> {
-        MapCache(RefCell::new(HashMap::new()))
+        MapCache(RwLock::new(HashMap::new()))
     }
 }
 
@@ -75,18 +93,28 @@ impl<K: Hash + Eq, V> MapCache<K, V> {
     where
         F: FnOnce(&V) -> R,
     {
-        self.0.borrow().get(key).map(filter)
+        let guard = self.0.read().expect("Cache lock is poisoned");
+        guard.get(key).map(filter)
     }
 
     /// Whether a value is set.
     #[inline]
     pub fn is_set(&self, key: &K) -> bool {
-        self.0.borrow().contains_key(key)
+        let guard = self.0.read().expect("Cache lock is poisoned");
+        guard.contains_key(key)
     }
 
     /// Set a new value.
     #[inline]
     pub fn set(&self, key: K, value: V) {
-        let _ = self.0.borrow_mut().insert(key, value);
+        let mut guard = self.0.write().expect("Cache lock is poisoned");
+        let _ = guard.insert(key, value);
+    }
+}
+
+impl<K: Hash + Eq + Clone, V: Clone> Clone for MapCache<K, V> {
+    fn clone(&self) -> MapCache<K, V> {
+        let guard = self.0.read().expect("Cache lock is poisoned");
+        MapCache(RwLock::new(guard.clone()))
     }
 }

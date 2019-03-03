@@ -241,7 +241,7 @@ impl AuthType for Password {
         &'auth self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + 'auth> {
+    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send + 'auth> {
         Box::new(self.get_token().map(move |token| {
             self.client
                 .request(method, url)
@@ -254,7 +254,7 @@ impl AuthType for Password {
         &'auth self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + 'auth> {
+    ) -> Box<Future<Item = Url, Error = Error> + Send + 'auth> {
         let real_interface =
             endpoint_interface.unwrap_or_else(|| self.default_endpoint_interface());
         debug!(
@@ -279,7 +279,12 @@ impl AuthType for Password {
         }))
     }
 
-    fn refresh<'auth>(&'auth mut self) -> Box<Future<Item = (), Error = Error> + 'auth> {
+    fn invalidate(&mut self) {
+        self.cached_token.invalidate();
+    }
+
+    fn refresh<'auth>(&'auth mut self) -> Box<Future<Item = (), Error = Error> + Send + 'auth> {
+        self.invalidate();
         Box::new(self.do_refresh())
     }
 }
