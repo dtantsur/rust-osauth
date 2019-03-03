@@ -30,7 +30,7 @@ use super::Error;
 /// 2. get an endpoint URL for the given service type.
 ///
 /// An authentication method should cache the token as long as it's valid.
-pub trait AuthType: BoxedClone + Debug {
+pub trait AuthType: BoxedClone + Debug + Sync {
     /// Default endpoint interface that is used when none is provided.
     fn default_endpoint_interface(&self) -> String {
         String::from("public")
