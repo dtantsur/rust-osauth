@@ -27,8 +27,7 @@ use reqwest::r#async::{Client, RequestBuilder, Response};
 use reqwest::{IntoUrl, Method, Url};
 
 use super::cache::ValueCache;
-use super::session::RequestBuilderExt;
-use super::{catalog, protocol, AuthType, Error, ErrorKind};
+use super::{catalog, protocol, request, AuthType, Error, ErrorKind};
 
 const MISSING_SUBJECT_HEADER: &str = "Missing X-Subject-Token header";
 const INVALID_SUBJECT_HEADER: &str = "Invalid X-Subject-Token header";
@@ -200,7 +199,8 @@ impl Password {
                     .post(&self.token_endpoint)
                     .json(&self.body)
                     .header(CONTENT_TYPE, "application/json")
-                    .send_checked()
+                    .send()
+                    .then(request::check)
                     .and_then(token_from_response)
                     .map(move |token| {
                         cached_token.set(token.clone());

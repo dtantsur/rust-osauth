@@ -26,7 +26,8 @@ use reqwest::{Method, Url};
 use serde::de::{DeserializeOwned, Error as DeserError};
 use serde::{Deserialize, Deserializer};
 
-use super::session::{RequestBuilderExt, ServiceType};
+use super::request;
+use super::session::ServiceType;
 use super::url;
 use super::{ApiVersion, AuthType, Error, ErrorKind};
 
@@ -196,8 +197,8 @@ impl Root {
         );
 
         auth.request(Method::GET, endpoint.clone())
-            .and_then(|req| req.send_checked())
-            .and_then(|mut resp| resp.json::<Root>().from_err())
+            .and_then(|req| req.send().from_err())
+            .then(request::to_json)
     }
 
     /// Extract `ServiceInfo` from a version discovery root.

@@ -14,14 +14,12 @@
 
 //! Session structure definition.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::future;
 use futures::prelude::*;
-use reqwest::r#async::{RequestBuilder, Response};
+use reqwest::r#async::RequestBuilder;
 use reqwest::{Method, Url};
-use serde::de::DeserializeOwned;
 
 use super::cache;
 use super::protocol::ServiceInfo;
@@ -57,74 +55,6 @@ pub trait ServiceType {
     /// Whether this service supports version discovery at all.
     fn version_discovery_supported() -> bool {
         true
-    }
-}
-
-/// Extension trait for HTTP calls with error handling.
-pub trait RequestBuilderExt {
-    /// Send a request and validate the status code.
-    fn send_checked(self) -> Box<Future<Item = Response, Error = Error> + Send>;
-
-    /// Send a request and discard the results.
-    fn commit(self) -> Box<Future<Item = (), Error = Error> + Send>
-    where
-        Self: Sized,
-    {
-        Box::new(self.send_checked().map(|_resp| ()))
-    }
-
-    /// Send a request and receive a JSON back.
-    fn receive_json<T: DeserializeOwned>(self) -> Box<Future<Item = (), Error = Error> + Send>
-    where
-        Self: Sized,
-    {
-        Box::new(
-            self.send_checked()
-                .and_then(move |mut resp| resp.json().from_err()),
-        )
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct Message {
-    message: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum ErrorResponse {
-    Map(HashMap<String, Message>),
-    Message(Message),
-}
-
-fn extract_message(resp: Response) -> impl Future<Item = String, Error = Error> {
-    resp.into_body().concat2().from_err().map(|chunk| {
-        serde_json::from_slice::<ErrorResponse>(&chunk)
-            .ok()
-            .and_then(|body| match body {
-                ErrorResponse::Map(map) => map.into_iter().next().map(|(_k, v)| v.message),
-                ErrorResponse::Message(msg) => Some(msg.message),
-            })
-            // TODO(dtantsur): detect the correct encoding? (should go into reqwest)
-            .unwrap_or_else(|| String::from_utf8_lossy(&chunk).into_owned())
-    })
-}
-
-impl RequestBuilderExt for RequestBuilder {
-    fn send_checked(self) -> Box<Future<Item = Response, Error = Error> + Send> {
-        Box::new(self.send().from_err().and_then(|resp| {
-            let status = resp.status();
-            if resp.status().is_client_error() || resp.status().is_server_error() {
-                future::Either::A(extract_message(resp).and_then(move |message| {
-                    trace!("HTTP request returned {}; error: {:?}", status, message);
-
-                    future::err(Error::new(status.into(), message).with_status(status))
-                }))
-            } else {
-                trace!("HTTP request to {} returned {}", resp.url(), resp.status());
-                future::Either::B(future::ok(resp))
-            }
-        }))
     }
 }
 
@@ -196,7 +126,7 @@ impl Session {
     pub fn get_endpoint<Srv: ServiceType + 'static>(
         &self,
         path: Vec<String>,
-    ) -> impl Future<Item = Url, Error = Error> {
+    ) -> impl Future<Item = Url, Error = Error> + Send {
         let path_iter = path.into_iter();
         self.ensure_service_info::<Srv>().map(move |infos| {
             let endpoint = infos
@@ -212,7 +142,7 @@ impl Session {
     /// API version discovery at all.
     pub fn get_major_version<Srv: ServiceType + 'static>(
         &self,
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> {
+    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
         self.ensure_service_info::<Srv>().map(|infos| {
             infos
                 .extract(&Srv::catalog_type(), |info| info.major_version)
@@ -226,7 +156,7 @@ impl Session {
     /// that microversioning is not supported.
     pub fn get_api_versions<Srv: ServiceType + 'static>(
         &self,
-    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> {
+    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
         self.ensure_service_info::<Srv>().map(|infos| {
             let min_max = infos
                 .extract(&Srv::catalog_type(), |info| {
@@ -244,7 +174,7 @@ impl Session {
     pub fn pick_api_version<Srv: ServiceType + 'static>(
         &self,
         versions: Vec<ApiVersion>,
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> {
+    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
         self.ensure_service_info::<Srv>().map(move |infos| {
             infos
                 .extract(&Srv::catalog_type(), |info| {
@@ -262,7 +192,7 @@ impl Session {
     pub fn supports_api_version<Srv: ServiceType + 'static>(
         &self,
         version: ApiVersion,
-    ) -> impl Future<Item = bool, Error = Error> {
+    ) -> impl Future<Item = bool, Error = Error> + Send {
         self.ensure_service_info::<Srv>().map(move |infos| {
             infos
                 .extract(&Srv::catalog_type(), |info| {
@@ -278,7 +208,7 @@ impl Session {
         method: Method,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
         let auth = Arc::clone(&self.auth);
         self.get_endpoint::<Srv>(path)
             .and_then(move |url| {
@@ -307,7 +237,7 @@ impl Session {
         &self,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
         self.request::<Srv>(Method::GET, path, api_version)
     }
 
@@ -317,7 +247,7 @@ impl Session {
         &self,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
         self.request::<Srv>(Method::POST, path, api_version)
     }
 
@@ -327,7 +257,7 @@ impl Session {
         &self,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
         self.request::<Srv>(Method::PUT, path, api_version)
     }
 
@@ -337,7 +267,7 @@ impl Session {
         &self,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
         self.request::<Srv>(Method::DELETE, path, api_version)
     }
 

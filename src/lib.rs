@@ -77,6 +77,7 @@ mod config;
 mod error;
 pub mod identity;
 mod protocol;
+pub mod request;
 mod session;
 mod url;
 
@@ -84,4 +85,4 @@ pub use crate::apiversion::ApiVersion;
 pub use crate::auth::{AuthType, NoAuth};
 pub use crate::config::{from_config, from_env};
 pub use crate::error::{Error, ErrorKind};
-pub use crate::session::{RequestBuilderExt, ServiceType, Session};
+pub use crate::session::{ServiceType, Session};
