@@ -51,11 +51,28 @@ pub trait ServiceType {
     }
 }
 
+/// A major version selector.
+#[derive(Copy, Clone, Debug)]
+pub enum VersionSelector {
+    /// Match the major component.
+    Major(u16),
+    /// Match the full version.
+    ///
+    /// Some service have a minor component in their major versions, e.g. 2.1.
+    Exact(ApiVersion),
+    /// A range of major versions.
+    Range(ApiVersion, ApiVersion),
+    /// Any major version.
+    Any,
+    #[doc(hidden)]
+    __Nonexhaustive,
+}
+
 /// A generic service.
 #[derive(Copy, Clone, Debug)]
 pub struct GenericService {
     catalog_type: &'static str,
-    major_version: Option<u16>,
+    major_version: VersionSelector,
 }
 
 /// The Compute service.
@@ -66,7 +83,7 @@ pub struct ComputeService {
 
 impl GenericService {
     /// Create a new generic service.
-    pub const fn new(catalog_type: &'static str, major_version: Option<u16>) -> GenericService {
+    pub const fn new(catalog_type: &'static str, major_version: VersionSelector) -> GenericService {
         GenericService {
             catalog_type,
             major_version,
@@ -80,10 +97,11 @@ impl ServiceType for GenericService {
     }
 
     fn major_version_supported(&self, version: ApiVersion) -> bool {
-        if let Some(supported) = self.major_version {
-            version.0 == supported
-        } else {
-            true
+        match self.major_version {
+            VersionSelector::Major(ver) => version.0 == ver,
+            VersionSelector::Exact(ver) => version == ver,
+            VersionSelector::Range(v1, v2) => v1 <= version && version <= v2,
+            _ => true,
         }
     }
 }
@@ -118,7 +136,7 @@ impl ServiceType for ComputeService {
 pub const COMPUTE: ComputeService = ComputeService::new();
 
 /// Image service.
-pub const IMAGE: GenericService = GenericService::new("image", None);
+pub const IMAGE: GenericService = GenericService::new("image", VersionSelector::Any);
 
 /// Networking service.
-pub const NETWORK: GenericService = GenericService::new("network", None);
+pub const NETWORK: GenericService = GenericService::new("network", VersionSelector::Any);

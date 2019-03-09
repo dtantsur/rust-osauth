@@ -291,7 +291,7 @@ pub(crate) mod test {
     use reqwest::Url;
 
     use super::super::protocol::ServiceInfo;
-    use super::super::services::GenericService;
+    use super::super::services::{GenericService, VersionSelector};
     use super::super::{ApiVersion, NoAuth};
     use super::Session;
 
@@ -316,7 +316,7 @@ pub(crate) mod test {
         session
     }
 
-    const FAKE: GenericService = GenericService::new("fake", None);
+    const FAKE: GenericService = GenericService::new("fake", VersionSelector::Any);
 
     #[test]
     fn test_get_endpoint() {
