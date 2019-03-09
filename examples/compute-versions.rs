@@ -19,19 +19,6 @@ extern crate tokio;
 
 use futures::Future;
 
-#[derive(Copy, Clone, Debug)]
-pub struct Compute;
-
-impl osauth::ServiceType for Compute {
-    fn catalog_type() -> &'static str {
-        "compute"
-    }
-
-    fn major_version_supported(version: osauth::ApiVersion) -> bool {
-        version.0 == 2
-    }
-}
-
 fn main() {
     env_logger::init();
 
@@ -40,11 +27,11 @@ fn main() {
 
     tokio::run(
         session
-            .get_major_version::<Compute>()
+            .get_major_version(osauth::services::COMPUTE)
             .map(|maybe_version| {
                 println!("Compute major version is {:?}", maybe_version);
             })
-            .and_then(move |_| session.get_api_versions::<Compute>())
+            .and_then(move |_| session.get_api_versions(osauth::services::COMPUTE))
             .map(|maybe_versions| {
                 if let Some((min, max)) = maybe_versions {
                     println!("Microversions: {} to {}", min, max);

@@ -23,40 +23,9 @@ use reqwest::{Method, Url};
 
 use super::cache;
 use super::protocol::ServiceInfo;
+use super::services::ServiceType;
 use super::url;
-use super::{ApiVersion, AuthType, Error, ErrorKind};
-
-/// Trait representing a service type.
-pub trait ServiceType {
-    /// Service type to pass to the catalog.
-    fn catalog_type() -> &'static str;
-
-    /// Check whether this service type is compatible with the given major version.
-    fn major_version_supported(_version: ApiVersion) -> bool {
-        true
-    }
-
-    /// Update the request to include the API version headers.
-    ///
-    /// The default implementation fails with `IncompatibleApiVersion`.
-    fn set_api_version_headers(
-        _request: RequestBuilder,
-        _version: ApiVersion,
-    ) -> Result<RequestBuilder, Error> {
-        Err(Error::new(
-            ErrorKind::IncompatibleApiVersion,
-            format!(
-                "The {} service does not support API versions",
-                Self::catalog_type()
-            ),
-        ))
-    }
-
-    /// Whether this service supports version discovery at all.
-    fn version_discovery_supported() -> bool {
-        true
-    }
-}
+use super::{ApiVersion, AuthType, Error};
 
 type Cache = cache::MapCache<&'static str, ServiceInfo>;
 
@@ -123,14 +92,16 @@ impl Session {
     /// Invalidate internal caches.
 
     /// Construct and endpoint for the given service from the path.
-    pub fn get_endpoint<Srv: ServiceType + 'static>(
+    pub fn get_endpoint<Srv: ServiceType + Send>(
         &self,
+        service: Srv,
         path: Vec<String>,
     ) -> impl Future<Item = Url, Error = Error> + Send {
         let path_iter = path.into_iter();
-        self.ensure_service_info::<Srv>().map(move |infos| {
+        let catalog_type = service.catalog_type();
+        self.ensure_service_info(service).map(move |infos| {
             let endpoint = infos
-                .extract(&Srv::catalog_type(), |info| info.root_url.clone())
+                .extract(&catalog_type, |info| info.root_url.clone())
                 .expect("No cache record after caching");
             url::extend(endpoint, path_iter)
         })
@@ -140,12 +111,14 @@ impl Session {
     ///
     /// Can return `IncompatibleApiVersion` if the service does not support
     /// API version discovery at all.
-    pub fn get_major_version<Srv: ServiceType + 'static>(
+    pub fn get_major_version<Srv: ServiceType + Send>(
         &self,
+        service: Srv,
     ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
-        self.ensure_service_info::<Srv>().map(|infos| {
+        let catalog_type = service.catalog_type();
+        self.ensure_service_info(service).map(move |infos| {
             infos
-                .extract(&Srv::catalog_type(), |info| info.major_version)
+                .extract(&catalog_type, |info| info.major_version)
                 .expect("No cache record after caching")
         })
     }
@@ -154,12 +127,14 @@ impl Session {
     ///
     /// Returns `None` if the range cannot be determined, which usually means
     /// that microversioning is not supported.
-    pub fn get_api_versions<Srv: ServiceType + 'static>(
+    pub fn get_api_versions<Srv: ServiceType + Send>(
         &self,
+        service: Srv,
     ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
-        self.ensure_service_info::<Srv>().map(|infos| {
+        let catalog_type = service.catalog_type();
+        self.ensure_service_info(service).map(move |infos| {
             let min_max = infos
-                .extract(&Srv::catalog_type(), |info| {
+                .extract(&catalog_type, |info| {
                     (info.minimum_version, info.current_version)
                 })
                 .expect("No cache record after caching");
@@ -171,13 +146,15 @@ impl Session {
     }
 
     /// Pick the highest API version supported by the service.
-    pub fn pick_api_version<Srv: ServiceType + 'static>(
+    pub fn pick_api_version<Srv: ServiceType + Send>(
         &self,
+        service: Srv,
         versions: Vec<ApiVersion>,
     ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
-        self.ensure_service_info::<Srv>().map(move |infos| {
+        let catalog_type = service.catalog_type();
+        self.ensure_service_info(service).map(move |infos| {
             infos
-                .extract(&Srv::catalog_type(), |info| {
+                .extract(&catalog_type, |info| {
                     versions
                         .iter()
                         .filter(|item| info.supports_api_version(**item))
@@ -189,28 +166,29 @@ impl Session {
     }
 
     /// Check if the service supports the API version.
-    pub fn supports_api_version<Srv: ServiceType + 'static>(
+    pub fn supports_api_version<Srv: ServiceType + Send>(
         &self,
+        service: Srv,
         version: ApiVersion,
     ) -> impl Future<Item = bool, Error = Error> + Send {
-        self.ensure_service_info::<Srv>().map(move |infos| {
+        let catalog_type = service.catalog_type();
+        self.ensure_service_info(service).map(move |infos| {
             infos
-                .extract(&Srv::catalog_type(), |info| {
-                    info.supports_api_version(version)
-                })
+                .extract(&catalog_type, |info| info.supports_api_version(version))
                 .expect("No cache record after caching")
         })
     }
 
     /// Make an HTTP request to the given service.
-    pub fn request<Srv: ServiceType + 'static>(
+    pub fn request<Srv: ServiceType + Clone + Send>(
         &self,
+        service: Srv,
         method: Method,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
     ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
         let auth = Arc::clone(&self.auth);
-        self.get_endpoint::<Srv>(path)
+        self.get_endpoint(service.clone(), path)
             .and_then(move |url| {
                 trace!(
                     "Sending HTTP {} request to {} with API version {:?}",
@@ -222,7 +200,7 @@ impl Session {
             })
             .and_then(move |mut builder| {
                 if let Some(version) = api_version {
-                    builder = match Srv::set_api_version_headers(builder, version) {
+                    builder = match service.set_api_version_headers(builder, version) {
                         Ok(builder) => builder,
                         Err(err) => return future::err(err),
                     }
@@ -233,54 +211,62 @@ impl Session {
 
     /// Start a GET request.
     #[inline]
-    pub fn get<Srv: ServiceType + 'static>(
+    pub fn get<Srv: ServiceType + Clone + Send>(
         &self,
+        service: Srv,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
     ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
-        self.request::<Srv>(Method::GET, path, api_version)
+        self.request(service, Method::GET, path, api_version)
     }
 
     /// Start a POST request.
     #[inline]
-    pub fn post<Srv: ServiceType + 'static>(
+    pub fn post<Srv: ServiceType + Clone + Send>(
         &self,
+        service: Srv,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
     ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
-        self.request::<Srv>(Method::POST, path, api_version)
+        self.request(service, Method::POST, path, api_version)
     }
 
     /// Start a PUT request.
     #[inline]
-    pub fn put<Srv: ServiceType + 'static>(
+    pub fn put<Srv: ServiceType + Clone + Send>(
         &self,
+        service: Srv,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
     ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
-        self.request::<Srv>(Method::PUT, path, api_version)
+        self.request(service, Method::PUT, path, api_version)
     }
 
     /// Start a DELETE request.
     #[inline]
-    pub fn delete<Srv: ServiceType + 'static>(
+    pub fn delete<Srv: ServiceType + Clone + Send>(
         &self,
+        service: Srv,
         path: Vec<String>,
         api_version: Option<ApiVersion>,
     ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
-        self.request::<Srv>(Method::DELETE, path, api_version)
+        self.request(service, Method::DELETE, path, api_version)
     }
 
-    fn ensure_service_info<Srv>(&self) -> impl Future<Item = Arc<Cache>, Error = Error>
+    fn ensure_service_info<Srv>(
+        &self,
+        service: Srv,
+    ) -> impl Future<Item = Arc<Cache>, Error = Error>
     where
-        Srv: ServiceType + 'static,
+        Srv: ServiceType + Send,
     {
-        if self.cached_info.is_set(&Srv::catalog_type()) {
+        let catalog_type = service.catalog_type();
+        if self.cached_info.is_set(&catalog_type) {
             future::Either::A(future::ok(Arc::clone(&self.cached_info)))
         } else {
             debug!(
                 "No cached information for service {}, fetching",
-                Srv::catalog_type()
+                catalog_type
             );
 
             let endpoint_interface = self.endpoint_interface.clone();
@@ -288,10 +274,10 @@ impl Session {
             let auth_type = Arc::clone(&self.auth);
             future::Either::B(
                 self.auth
-                    .get_endpoint(Srv::catalog_type().to_string(), endpoint_interface)
-                    .and_then(move |ep| ServiceInfo::fetch::<Srv>(ep, auth_type))
+                    .get_endpoint(catalog_type.to_string(), endpoint_interface)
+                    .and_then(move |ep| ServiceInfo::fetch(service, ep, auth_type))
                     .map(move |info| {
-                        cached_info.set(Srv::catalog_type(), info);
+                        cached_info.set(catalog_type, info);
                         cached_info
                     }),
             )
@@ -305,8 +291,9 @@ pub(crate) mod test {
     use reqwest::Url;
 
     use super::super::protocol::ServiceInfo;
+    use super::super::services::GenericService;
     use super::super::{ApiVersion, NoAuth};
-    use super::{ServiceType, Session};
+    use super::Session;
 
     pub const URL: &str = "http://127.0.0.1:5000/";
 
@@ -329,18 +316,12 @@ pub(crate) mod test {
         session
     }
 
-    pub struct FakeService;
-
-    impl ServiceType for FakeService {
-        fn catalog_type() -> &'static str {
-            "fake"
-        }
-    }
+    const FAKE: GenericService = GenericService::new("fake", None);
 
     #[test]
     fn test_get_endpoint() {
         let s = new_simple_session(URL);
-        let ep = s.get_endpoint::<FakeService>(Vec::new()).wait().unwrap();
+        let ep = s.get_endpoint(FAKE, Vec::new()).wait().unwrap();
         assert_eq!(&ep.to_string(), URL);
     }
 
@@ -348,7 +329,7 @@ pub(crate) mod test {
     fn test_get_endpoint2() {
         let s = new_simple_session(URL);
         let ep = s
-            .get_endpoint::<FakeService>(vec!["v2".to_string(), "servers".to_string()])
+            .get_endpoint(FAKE, vec!["v2".to_string(), "servers".to_string()])
             .wait()
             .unwrap();
         assert_eq!(&ep.to_string(), URL_WITH_SUFFIX);
@@ -357,7 +338,7 @@ pub(crate) mod test {
     #[test]
     fn test_get_major_version_absent() {
         let s = new_simple_session(URL);
-        let res = s.get_major_version::<FakeService>().wait().unwrap();
+        let res = s.get_major_version(FAKE).wait().unwrap();
         assert!(res.is_none());
     }
 
@@ -370,7 +351,7 @@ pub(crate) mod test {
             current_version: None,
         };
         let s = new_session(URL, service_info);
-        let res = s.get_major_version::<FakeService>().wait().unwrap();
+        let res = s.get_major_version(FAKE).wait().unwrap();
         assert_eq!(res, Some(ApiVersion(2, 0)));
     }
 }

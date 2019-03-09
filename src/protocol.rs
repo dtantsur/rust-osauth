@@ -27,7 +27,7 @@ use serde::de::{DeserializeOwned, Error as DeserError};
 use serde::{Deserialize, Deserializer};
 
 use super::request;
-use super::session::ServiceType;
+use super::services::ServiceType;
 use super::url;
 use super::{ApiVersion, AuthType, Error, ErrorKind};
 
@@ -186,36 +186,33 @@ impl Version {
 
 impl Root {
     /// Fetch versioning root from a URL.
-    pub fn fetch<Srv: ServiceType + 'static>(
+    pub fn fetch(
+        catalog_type: &'static str,
         endpoint: Url,
         auth: Arc<AuthType>,
     ) -> impl Future<Item = Root, Error = Error> {
-        debug!(
-            "Fetching {} service info from {}",
-            Srv::catalog_type(),
-            endpoint
-        );
+        debug!("Fetching {} service info from {}", catalog_type, endpoint);
 
         auth.request(Method::GET, endpoint)
             .then(request::fetch_json)
     }
 
     /// Extract `ServiceInfo` from a version discovery root.
-    pub fn into_service_info<Srv: ServiceType>(self) -> Result<ServiceInfo, Error> {
+    pub fn into_service_info<Srv: ServiceType>(self, service: Srv) -> Result<ServiceInfo, Error> {
         trace!(
             "Available major versions for {} service: {:?}",
-            Srv::catalog_type(),
+            service.catalog_type(),
             self
         );
 
         match self {
             Root::OneVersion { version: ver } => {
-                if Srv::major_version_supported(ver.id) {
+                if service.major_version_supported(ver.id) {
                     if !ver.is_stable() {
                         warn!(
                             "Using version {:?} of {} API that is not marked as stable",
                             ver,
-                            Srv::catalog_type()
+                            service.catalog_type()
                         );
                     }
 
@@ -231,10 +228,10 @@ impl Root {
                 vers.sort_unstable_by_key(|x| x.id);
                 match vers
                     .into_iter()
-                    .rfind(|x| x.is_stable() && Srv::major_version_supported(x.id))
+                    .rfind(|x| x.is_stable() && service.major_version_supported(x.id))
                 {
                     Some(ver) => ver.into_service_info(),
-                    None => Err(Error::new_endpoint_not_found(Srv::catalog_type())),
+                    None => Err(Error::new_endpoint_not_found(service.catalog_type())),
                 }
             }
         }
@@ -256,14 +253,15 @@ impl ServiceInfo {
     }
 
     /// Generic code to extract a `ServiceInfo` from a URL.
-    pub fn fetch<Srv: ServiceType + 'static>(
+    pub fn fetch<Srv: ServiceType>(
+        service: Srv,
         endpoint: Url,
         auth: Arc<AuthType>,
     ) -> impl Future<Item = ServiceInfo, Error = Error> {
-        if !Srv::version_discovery_supported() {
+        if !service.version_discovery_supported() {
             debug!(
                 "Service {} does not support version discovery, using {}",
-                Srv::catalog_type(),
+                service.catalog_type(),
                 endpoint
             );
             return future::Either::A(future::ok(ServiceInfo {
@@ -277,30 +275,35 @@ impl ServiceInfo {
         // Workaround for old version of Nova returning HTTP endpoints even if
         // accessed via HTTP
         let secure = endpoint.scheme() == "https";
+        let catalog_type = service.catalog_type();
 
         future::Either::B(
-            Root::fetch::<Srv>(endpoint.clone(), auth.clone())
+            Root::fetch(catalog_type, endpoint.clone(), auth.clone())
                 .or_else(move |e| {
                     if e.kind() == ErrorKind::ResourceNotFound {
                         if url::is_root(&endpoint) {
-                            let err = Error::new_endpoint_not_found(Srv::catalog_type());
+                            let err = Error::new_endpoint_not_found(catalog_type);
                             future::Either::A(future::err(err))
                         } else {
                             debug!("Got HTTP 404 from {}, trying parent endpoint", endpoint);
-                            future::Either::B(Root::fetch::<Srv>(url::pop(endpoint, true), auth))
+                            future::Either::B(Root::fetch(
+                                catalog_type,
+                                url::pop(endpoint, true),
+                                auth,
+                            ))
                         }
                     } else {
                         future::Either::A(future::err(e))
                     }
                 })
-                .and_then(|root| root.into_service_info::<Srv>())
+                .and_then(|root| root.into_service_info(service))
                 .map(move |mut info| {
                     // Older Nova returns insecure URLs even for secure protocol.
                     if secure && info.root_url.scheme() == "http" {
                         info.root_url.set_scheme("https").unwrap();
                     }
 
-                    debug!("Received {:?} for {} service", info, Srv::catalog_type());
+                    debug!("Received {:?} for {} service", info, catalog_type);
                     info
                 }),
         )
@@ -412,7 +415,7 @@ where
 pub(crate) mod test {
     use reqwest::Url;
 
-    use super::super::session::ServiceType;
+    use super::super::services::ServiceType;
     use super::super::ApiVersion;
     use super::super::ErrorKind;
     use super::{Link, Root, Version};
@@ -522,11 +525,11 @@ pub(crate) mod test {
     struct ServiceWithDiscovery;
 
     impl ServiceType for ServiceWithDiscovery {
-        fn catalog_type() -> &'static str {
+        fn catalog_type(&self) -> &'static str {
             "test-service-with-discovery"
         }
 
-        fn major_version_supported(version: ApiVersion) -> bool {
+        fn major_version_supported(&self, version: ApiVersion) -> bool {
             version.0 == 1 && version.1 > 0
         }
     }
@@ -547,7 +550,7 @@ pub(crate) mod test {
             },
         };
 
-        let info = root.into_service_info::<ServiceWithDiscovery>().unwrap();
+        let info = root.into_service_info(ServiceWithDiscovery).unwrap();
         assert_eq!(info.root_url, url);
         assert_eq!(info.major_version, Some(ApiVersion(1, 2)));
     }
@@ -568,10 +571,7 @@ pub(crate) mod test {
             },
         };
 
-        let err = root
-            .into_service_info::<ServiceWithDiscovery>()
-            .err()
-            .unwrap();
+        let err = root.into_service_info(ServiceWithDiscovery).err().unwrap();
         assert_eq!(err.kind(), ErrorKind::EndpointNotFound);
     }
 
@@ -623,7 +623,7 @@ pub(crate) mod test {
             ],
         };
 
-        let info = root.into_service_info::<ServiceWithDiscovery>().unwrap();
+        let info = root.into_service_info(ServiceWithDiscovery).unwrap();
         assert_eq!(info.root_url, url);
         assert_eq!(info.major_version, Some(ApiVersion(1, 2)));
     }
@@ -655,10 +655,7 @@ pub(crate) mod test {
             ],
         };
 
-        let err = root
-            .into_service_info::<ServiceWithDiscovery>()
-            .err()
-            .unwrap();
+        let err = root.into_service_info(ServiceWithDiscovery).err().unwrap();
         assert_eq!(err.kind(), ErrorKind::EndpointNotFound);
     }
 }
