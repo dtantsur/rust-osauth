@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use futures::future::{self, Either};
 use futures::prelude::*;
-use reqwest::r#async::Response;
+use reqwest::r#async::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 
 use super::Error;
@@ -49,31 +49,57 @@ fn extract_message(resp: Response) -> impl Future<Item = String, Error = Error> 
 }
 
 /// Check the response and convert errors into OpenStack ones.
-pub fn check<E>(maybe_response: Result<Response, E>) -> impl Future<Item = Response, Error = Error>
+pub fn check<E>(
+    maybe_response: Result<Response, E>,
+) -> impl Future<Item = Response, Error = Error> + Send
 where
     E: Into<Error>,
 {
-    let resp = match maybe_response {
-        Ok(resp) => resp,
-        Err(err) => return Either::A(future::err(err.into())),
-    };
+    maybe_response
+        .map_err(Into::into)
+        .into_future()
+        .and_then(|resp| {
+            let status = resp.status();
+            if status.is_client_error() || status.is_server_error() {
+                Either::B(extract_message(resp).and_then(move |message| {
+                    trace!("HTTP request returned {}; error: {:?}", status, message);
 
-    let status = resp.status();
-    if resp.status().is_client_error() || resp.status().is_server_error() {
-        future::Either::B(extract_message(resp).and_then(move |message| {
-            trace!("HTTP request returned {}; error: {:?}", status, message);
+                    future::err(Error::new(status.into(), message).with_status(status))
+                }))
+            } else {
+                trace!("HTTP request to {} returned {}", resp.url(), resp.status());
+                Either::A(future::ok(resp))
+            }
+        })
+}
 
-            future::err(Error::new(status.into(), message).with_status(status))
-        }))
-    } else {
-        trace!("HTTP request to {} returned {}", resp.url(), resp.status());
-        future::Either::A(future::ok(resp))
-    }
+/// Send the request and check its result.
+#[inline]
+pub fn send_checked<E>(
+    maybe_builder: Result<RequestBuilder, E>,
+) -> impl Future<Item = Response, Error = Error> + Send
+where
+    E: Into<Error>,
+{
+    maybe_builder
+        .map_err(Into::into)
+        .into_future()
+        .and_then(|builder| builder.send().from_err())
+        .then(check)
 }
 
 /// Check the response and convert it to a JSON.
-pub fn to_json<T: DeserializeOwned, E: Into<Error>>(
+#[inline]
+pub fn to_json<T: DeserializeOwned + Send, E: Into<Error>>(
     maybe_response: Result<Response, E>,
-) -> impl Future<Item = T, Error = Error> {
+) -> impl Future<Item = T, Error = Error> + Send {
     check(maybe_response).and_then(move |mut resp| resp.json().from_err())
+}
+
+/// Send the response and convert the response to a JSON.
+#[inline]
+pub fn fetch_json<T: DeserializeOwned + Send, E: Into<Error>>(
+    maybe_builder: Result<RequestBuilder, E>,
+) -> impl Future<Item = T, Error = Error> + Send {
+    send_checked(maybe_builder).and_then(move |mut resp| resp.json().from_err())
 }

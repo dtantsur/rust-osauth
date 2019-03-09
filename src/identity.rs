@@ -22,7 +22,6 @@ use std::sync::Arc;
 use chrono::{Duration, Local};
 use futures::future;
 use futures::prelude::*;
-use reqwest::header::CONTENT_TYPE;
 use reqwest::r#async::{Client, RequestBuilder, Response};
 use reqwest::{IntoUrl, Method, Url};
 
@@ -198,7 +197,6 @@ impl Password {
                 self.client
                     .post(&self.token_endpoint)
                     .json(&self.body)
-                    .header(CONTENT_TYPE, "application/json")
                     .send()
                     .then(request::check)
                     .and_then(token_from_response)

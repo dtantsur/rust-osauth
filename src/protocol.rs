@@ -196,9 +196,8 @@ impl Root {
             endpoint
         );
 
-        auth.request(Method::GET, endpoint.clone())
-            .and_then(|req| req.send().from_err())
-            .then(request::to_json)
+        auth.request(Method::GET, endpoint)
+            .then(request::fetch_json)
     }
 
     /// Extract `ServiceInfo` from a version discovery root.
