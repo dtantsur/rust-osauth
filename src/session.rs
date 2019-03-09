@@ -20,9 +20,11 @@ use futures::future;
 use futures::prelude::*;
 use reqwest::r#async::RequestBuilder;
 use reqwest::{Method, Url};
+use serde::de::DeserializeOwned;
 
 use super::cache;
 use super::protocol::ServiceInfo;
+use super::request;
 use super::services::ServiceType;
 use super::url;
 use super::{ApiVersion, AuthType, Error};
@@ -92,11 +94,17 @@ impl Session {
     /// Invalidate internal caches.
 
     /// Construct and endpoint for the given service from the path.
-    pub fn get_endpoint<Srv: ServiceType + Send>(
+    pub fn get_endpoint<Srv, I>(
         &self,
         service: Srv,
-        path: Vec<String>,
-    ) -> impl Future<Item = Url, Error = Error> + Send {
+        path: I,
+    ) -> impl Future<Item = Url, Error = Error> + Send
+    where
+        Srv: ServiceType + Send,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
         let path_iter = path.into_iter();
         let catalog_type = service.catalog_type();
         self.ensure_service_info(service).map(move |infos| {
@@ -180,13 +188,19 @@ impl Session {
     }
 
     /// Make an HTTP request to the given service.
-    pub fn request<Srv: ServiceType + Clone + Send>(
+    pub fn request<Srv, I>(
         &self,
         service: Srv,
         method: Method,
-        path: Vec<String>,
+        path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
         let auth = Arc::clone(&self.auth);
         self.get_endpoint(service.clone(), path)
             .and_then(move |url| {
@@ -211,45 +225,88 @@ impl Session {
 
     /// Start a GET request.
     #[inline]
-    pub fn get<Srv: ServiceType + Clone + Send>(
+    pub fn get<Srv, I>(
         &self,
         service: Srv,
-        path: Vec<String>,
+        path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
         self.request(service, Method::GET, path, api_version)
+    }
+
+    /// Fetch a JSON using the GET request.
+    #[inline]
+    pub fn get_json<Srv, I, T>(
+        &self,
+        service: Srv,
+        path: I,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = T, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        T: DeserializeOwned + Send,
+    {
+        self.get(service, path, api_version)
+            .then(request::fetch_json)
     }
 
     /// Start a POST request.
     #[inline]
-    pub fn post<Srv: ServiceType + Clone + Send>(
+    pub fn post<Srv, I>(
         &self,
         service: Srv,
-        path: Vec<String>,
+        path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
         self.request(service, Method::POST, path, api_version)
     }
 
     /// Start a PUT request.
     #[inline]
-    pub fn put<Srv: ServiceType + Clone + Send>(
+    pub fn put<Srv, I>(
         &self,
         service: Srv,
-        path: Vec<String>,
+        path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
         self.request(service, Method::PUT, path, api_version)
     }
 
     /// Start a DELETE request.
     #[inline]
-    pub fn delete<Srv: ServiceType + Clone + Send>(
+    pub fn delete<Srv, I>(
         &self,
         service: Srv,
-        path: Vec<String>,
+        path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send {
+    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
         self.request(service, Method::DELETE, path, api_version)
     }
 
@@ -321,12 +378,19 @@ pub(crate) mod test {
     #[test]
     fn test_get_endpoint() {
         let s = new_simple_session(URL);
-        let ep = s.get_endpoint(FAKE, Vec::new()).wait().unwrap();
+        let ep = s.get_endpoint(FAKE, &[""]).wait().unwrap();
         assert_eq!(&ep.to_string(), URL);
     }
 
     #[test]
-    fn test_get_endpoint2() {
+    fn test_get_endpoint_slice() {
+        let s = new_simple_session(URL);
+        let ep = s.get_endpoint(FAKE, &["v2", "servers"]).wait().unwrap();
+        assert_eq!(&ep.to_string(), URL_WITH_SUFFIX);
+    }
+
+    #[test]
+    fn test_get_endpoint_vec() {
         let s = new_simple_session(URL);
         let ep = s
             .get_endpoint(FAKE, vec!["v2".to_string(), "servers".to_string()])

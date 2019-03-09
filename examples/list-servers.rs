@@ -15,10 +15,23 @@
 extern crate env_logger;
 extern crate futures;
 extern crate osauth;
+#[macro_use]
+extern crate serde_derive;
 extern crate tokio;
 
 use futures::Future;
 use tokio::runtime::Runtime;
+
+#[derive(Debug, Deserialize)]
+pub struct Server {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ServersRoot {
+    pub servers: Vec<Server>,
+}
 
 fn main() {
     env_logger::init();
@@ -29,17 +42,12 @@ fn main() {
 
     rt.block_on(
         session
-            .get_major_version(osauth::services::COMPUTE)
-            .map(|maybe_version| {
-                println!("Compute major version is {:?}", maybe_version);
-            })
-            .and_then(move |_| session.get_api_versions(osauth::services::COMPUTE))
-            .map(|maybe_versions| {
-                if let Some((min, max)) = maybe_versions {
-                    println!("Microversions: {} to {}", min, max);
-                } else {
-                    println!("Microversions are not supported");
+            .get_json(osauth::services::COMPUTE, &["servers"], None)
+            .map(|servers: ServersRoot| {
+                for srv in servers.servers {
+                    println!("ID = {}, Name = {}", srv.id, srv.name);
                 }
+                println!("Done listing")
             }),
     )
     .expect("Execution failed");
