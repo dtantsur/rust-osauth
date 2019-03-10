@@ -18,9 +18,10 @@ use std::sync::Arc;
 
 use futures::future;
 use futures::prelude::*;
-use reqwest::r#async::RequestBuilder;
+use reqwest::r#async::{RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use super::cache;
 use super::protocol::ServiceInfo;
@@ -225,7 +226,7 @@ impl Session {
 
     /// Start a GET request.
     #[inline]
-    pub fn get<Srv, I>(
+    pub fn start_get<Srv, I>(
         &self,
         service: Srv,
         path: I,
@@ -238,6 +239,24 @@ impl Session {
         I::IntoIter: Send,
     {
         self.request(service, Method::GET, path, api_version)
+    }
+
+    /// Issue a GET request.
+    #[inline]
+    pub fn get<Srv, I, T>(
+        &self,
+        service: Srv,
+        path: I,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = Response, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
+        self.start_get(service, path, api_version)
+            .then(request::send_checked)
     }
 
     /// Fetch a JSON using the GET request.
@@ -255,13 +274,13 @@ impl Session {
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        self.get(service, path, api_version)
+        self.start_get(service, path, api_version)
             .then(request::fetch_json)
     }
 
     /// Start a POST request.
     #[inline]
-    pub fn post<Srv, I>(
+    pub fn start_post<Srv, I>(
         &self,
         service: Srv,
         path: I,
@@ -276,9 +295,52 @@ impl Session {
         self.request(service, Method::POST, path, api_version)
     }
 
+    /// POST a JSON object.
+    #[inline]
+    pub fn post<Srv, I, T>(
+        &self,
+        service: Srv,
+        path: I,
+        body: T,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = Response, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        T: Serialize + Send,
+    {
+        self.start_post(service, path, api_version)
+            .map(move |builder| builder.json(&body))
+            .then(request::send_checked)
+    }
+
+    /// POST a JSON object and receive a JSON back.
+    #[inline]
+    pub fn post_json<Srv, I, T, R>(
+        &self,
+        service: Srv,
+        path: I,
+        body: T,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = R, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        T: Serialize + Send,
+        R: DeserializeOwned + Send,
+    {
+        self.start_post(service, path, api_version)
+            .map(move |builder| builder.json(&body))
+            .then(request::fetch_json)
+    }
+
     /// Start a PUT request.
     #[inline]
-    pub fn put<Srv, I>(
+    pub fn start_put<Srv, I>(
         &self,
         service: Srv,
         path: I,
@@ -293,9 +355,52 @@ impl Session {
         self.request(service, Method::PUT, path, api_version)
     }
 
+    /// PUT a JSON object.
+    #[inline]
+    pub fn put<Srv, I, T>(
+        &self,
+        service: Srv,
+        path: I,
+        body: T,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = Response, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        T: Serialize + Send,
+    {
+        self.start_put(service, path, api_version)
+            .map(move |builder| builder.json(&body))
+            .then(request::send_checked)
+    }
+
+    /// PUT a JSON object and receive a JSON back.
+    #[inline]
+    pub fn put_json<Srv, I, T, R>(
+        &self,
+        service: Srv,
+        path: I,
+        body: T,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = R, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        T: Serialize + Send,
+        R: DeserializeOwned + Send,
+    {
+        self.start_put(service, path, api_version)
+            .map(move |builder| builder.json(&body))
+            .then(request::fetch_json)
+    }
+
     /// Start a DELETE request.
     #[inline]
-    pub fn delete<Srv, I>(
+    pub fn start_delete<Srv, I>(
         &self,
         service: Srv,
         path: I,
@@ -308,6 +413,24 @@ impl Session {
         I::IntoIter: Send,
     {
         self.request(service, Method::DELETE, path, api_version)
+    }
+
+    /// Issue a DELETE request.
+    #[inline]
+    pub fn delete<Srv, I>(
+        &self,
+        service: Srv,
+        path: I,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = Response, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
+        self.start_delete(service, path, api_version)
+            .then(request::send_checked)
     }
 
     fn ensure_service_info<Srv>(
