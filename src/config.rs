@@ -20,6 +20,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use dirs;
+use serde::Deserialize;
 use serde_yaml;
 
 use super::identity::Password;

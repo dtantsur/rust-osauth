@@ -24,7 +24,7 @@ use futures::future;
 use futures::prelude::*;
 use reqwest::{Method, Url};
 use serde::de::{DeserializeOwned, Error as DeserError};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::request;
 use super::services::ServiceType;

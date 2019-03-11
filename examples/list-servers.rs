@@ -15,11 +15,10 @@
 extern crate env_logger;
 extern crate futures;
 extern crate osauth;
-#[macro_use]
-extern crate serde_derive;
 extern crate tokio;
 
 use futures::Future;
+use serde::Deserialize;
 use tokio::runtime::Runtime;
 
 #[derive(Debug, Deserialize)]
