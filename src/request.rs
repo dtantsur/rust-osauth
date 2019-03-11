@@ -23,12 +23,12 @@ use serde::de::DeserializeOwned;
 
 use super::Error;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Message {
     message: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum ErrorResponse {
     Map(HashMap<String, Message>),

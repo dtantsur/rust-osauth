@@ -116,12 +116,12 @@ pub struct Token {
     pub catalog: Vec<CatalogRecord>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct TokenRoot {
     pub token: Token,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Version {
     #[serde(deserialize_with = "deser_version")]
     pub id: ApiVersion,
@@ -134,7 +134,7 @@ pub struct Version {
     pub min_version: Option<ApiVersion>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Root {
     MultipleVersions { versions: Vec<Version> },
@@ -142,7 +142,7 @@ pub enum Root {
 }
 
 /// Information about API endpoint.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ServiceInfo {
     /// Root endpoint.
     pub root_url: Url,

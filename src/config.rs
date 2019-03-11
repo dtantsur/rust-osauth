@@ -25,7 +25,7 @@ use serde_yaml;
 use super::identity::Password;
 use super::{Error, ErrorKind, Session};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Auth {
     auth_url: String,
     password: String,
@@ -38,20 +38,20 @@ struct Auth {
     user_domain_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Cloud {
     auth: Auth,
     #[serde(default)]
     region_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Clouds {
     #[serde(flatten)]
     clouds: HashMap<String, Cloud>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Root {
     clouds: Clouds,
 }
