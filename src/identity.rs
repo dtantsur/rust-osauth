@@ -22,6 +22,7 @@ use std::sync::Arc;
 use chrono::{Duration, Local};
 use futures::future;
 use futures::prelude::*;
+use log::{debug, error, trace};
 use reqwest::r#async::{Client, RequestBuilder, Response};
 use reqwest::{IntoUrl, Method, Url};
 

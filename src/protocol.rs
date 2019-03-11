@@ -22,6 +22,7 @@ use std::sync::Arc;
 use chrono::{DateTime, FixedOffset};
 use futures::future;
 use futures::prelude::*;
+use log::{debug, trace, warn};
 use reqwest::{Method, Url};
 use serde::de::{DeserializeOwned, Error as DeserError};
 use serde::{Deserialize, Deserializer, Serialize};

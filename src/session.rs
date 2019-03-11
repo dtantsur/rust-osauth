@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use futures::future;
 use futures::prelude::*;
+use log::{debug, trace};
 use reqwest::r#async::{RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;

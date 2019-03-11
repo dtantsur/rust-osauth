@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 use futures::future::{self, Either};
 use futures::prelude::*;
+use log::trace;
 use reqwest::r#async::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
