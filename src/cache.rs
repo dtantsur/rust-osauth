@@ -67,13 +67,6 @@ impl<T> ValueCache<T> {
     }
 }
 
-impl<T: Clone> Clone for ValueCache<T> {
-    fn clone(&self) -> ValueCache<T> {
-        let guard = self.0.read().expect("Cache lock is poisoned");
-        ValueCache(RwLock::new(guard.clone()))
-    }
-}
-
 impl<K: Hash + Eq, V> Default for MapCache<K, V> {
     fn default() -> MapCache<K, V> {
         MapCache(RwLock::new(HashMap::new()))
@@ -103,12 +96,5 @@ impl<K: Hash + Eq, V> MapCache<K, V> {
     pub fn set(&self, key: K, value: V) {
         let mut guard = self.0.write().expect("Cache lock is poisoned");
         let _ = guard.insert(key, value);
-    }
-}
-
-impl<K: Hash + Eq + Clone, V: Clone> Clone for MapCache<K, V> {
-    fn clone(&self) -> MapCache<K, V> {
-        let guard = self.0.read().expect("Cache lock is poisoned");
-        MapCache(RwLock::new(guard.clone()))
     }
 }

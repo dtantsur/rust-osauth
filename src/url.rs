@@ -14,21 +14,12 @@
 
 //! Handy primitives for working with URLs.
 
-#![allow(dead_code)]
-
 use reqwest::Url;
 
 #[inline]
 #[allow(unused_results)]
 pub fn is_root(url: &Url) -> bool {
     url.path_segments().unwrap().any(|x| !x.is_empty())
-}
-
-#[inline]
-#[allow(unused_results)]
-pub fn join(mut url: Url, other: &str) -> Url {
-    url.path_segments_mut().unwrap().pop_if_empty().push(other);
-    url
 }
 
 #[inline]
