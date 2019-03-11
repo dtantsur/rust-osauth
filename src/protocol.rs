@@ -45,48 +45,48 @@ pub struct IdAndName {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Domain {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct UserAndPassword {
     pub name: String,
     pub password: String,
     pub domain: Domain,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PasswordAuth {
     pub user: UserAndPassword,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PasswordIdentity {
     pub methods: Vec<String>,
     pub password: PasswordAuth,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Project {
     pub name: String,
     pub domain: Domain,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProjectScope {
     pub project: Project,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProjectScopedAuth {
     pub identity: PasswordIdentity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<ProjectScope>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProjectScopedAuthRoot {
     pub auth: ProjectScopedAuth,
 }
