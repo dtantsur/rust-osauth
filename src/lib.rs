@@ -50,21 +50,11 @@
     unused_results,
     while_true
 )]
-#![allow(unused_extern_crates)]
 #![allow(
     clippy::new_ret_no_self,
     clippy::should_implement_trait,
     clippy::wrong_self_convention
 )]
-
-extern crate chrono;
-extern crate dirs;
-extern crate futures;
-extern crate log;
-extern crate reqwest;
-extern crate serde;
-extern crate serde_json;
-extern crate serde_yaml;
 
 mod apiversion;
 mod auth;
