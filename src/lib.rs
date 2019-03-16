@@ -50,11 +50,6 @@
     unused_results,
     while_true
 )]
-#![allow(
-    clippy::new_ret_no_self,
-    clippy::should_implement_trait,
-    clippy::wrong_self_convention
-)]
 
 mod apiversion;
 mod auth;
