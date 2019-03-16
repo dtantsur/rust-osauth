@@ -22,20 +22,15 @@ use reqwest::{IntoUrl, Method, Url};
 
 use super::Error;
 
-/// Trait for an authentication method.
+/// Trait for an authentication type.
 ///
-/// An OpenStack authentication method is expected to be able to:
+/// An OpenStack authentication type is expected to be able to:
 ///
 /// 1. get an authentication token to use when accessing services,
 /// 2. get an endpoint URL for the given service type.
 ///
-/// An authentication method should cache the token as long as it's valid.
+/// An authentication type should cache the token as long as it's valid.
 pub trait AuthType: Debug + Sync + Send {
-    /// Region used with this authentication (if any).
-    fn region(&self) -> Option<String> {
-        None
-    }
-
     /// Get a URL for the requested service.
     fn get_endpoint(
         &self,
@@ -52,12 +47,21 @@ pub trait AuthType: Debug + Sync + Send {
 
     /// Refresh the authentication (renew the token, etc).
     fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send>;
+
+    /// Region used with this authentication (if any).
+    fn region(&self) -> Option<String> {
+        None
+    }
 }
 
-/// Authentication method that provides no authentication.
+/// Authentication type that provides no authentication.
 ///
-/// This method always returns a constant fake token, and a pre-defined
-/// endpoint.
+/// This type always uses a pre-defined endpoint and sends no authenticaiton information:
+/// ```rust,no_run
+/// let auth = osauth::NoAuth::new("https://cloud.local/baremetal")
+///     .expect("Invalid auth URL");
+/// let session = osauth::Session::new(auth);
+/// ```
 #[derive(Clone, Debug)]
 pub struct NoAuth {
     client: Client,
@@ -67,8 +71,8 @@ pub struct NoAuth {
 impl NoAuth {
     /// Create a new fake authentication method using a fixed endpoint.
     ///
-    /// This endpoint will be returned in response to all get_endpoint calls
-    /// of the [AuthMethod](trait.AuthMethod.html) trait.
+    /// This endpoint will be returned in response to all `get_endpoint` calls
+    /// of the [AuthType](trait.AuthType.html) trait.
     pub fn new<U>(endpoint: U) -> Result<NoAuth, Error>
     where
         U: IntoUrl,
@@ -99,6 +103,7 @@ impl AuthType for NoAuth {
         Box::new(future::ok(self.endpoint.clone()))
     }
 
+    /// This call does nothing for `NoAuth`.
     fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send> {
         Box::new(future::ok(()))
     }

@@ -13,6 +13,42 @@
 // limitations under the License.
 
 //! Asynchronous OpenStack session and authentication.
+//!
+//! # Introduction
+//!
+//! This crate provides low-level asynchronous access to OpenStack API. It features:
+//! 1. Authentication and token caching.
+//! 2. Major and microversion handling.
+//! 3. Service catalog integration.
+//! 4. JSON API error handling.
+//! 5. Service types for supported services.
+//!
+//! It does NOT provide:
+//! 1. Protocol structures for any services.
+//! 2. Automatic microversion negotiation.
+//!
+//! See [openstack crate](https://crates.io/crates/openstack) for these features.
+//!
+//! # Requirements
+//!
+//! This crate requires Rust 2018 edition and relies heavily on
+//! [futures](https://crates.io/crates/futures) 0.1. It has not yet been updated for the new
+//! `async`/`await` syntax and may not be compatible with it out-of-box.
+//!
+//! # Usage
+//!
+//! Your entry point to the API is the [Session](struct.Session.html) structure. To create it you
+//! need an authentication type object first. It can be obtained by:
+//! * Using [Password](identity/struct.Password.html) authentication against the Identity service.
+//! * Using [NoAuth](struct.NoAuth.html) authentication type, allowing access to standalone
+//!   services without authentication.
+//!
+//! A `Session` can be created directly by loading it:
+//! * From the `clouds.yaml` configuration file using [from_config](fn.from_config.html).
+//! * From environment variables using [from_env](fn.from_env.html).
+//!
+//! See [Session](struct.Session.html) documentation for the details on using a `Session` for making
+//! OpenStack calls.
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]

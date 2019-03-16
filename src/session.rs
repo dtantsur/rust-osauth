@@ -35,10 +35,8 @@ type Cache = cache::MapCache<&'static str, ServiceInfo>;
 
 /// An OpenStack API session.
 ///
-/// The session object serves as a wrapper around an HTTP(s) client, handling
-/// authentication, accessing the service catalog and token refresh.
-///
-/// The session object also owns the endpoint interface to use.
+/// The session object serves as a wrapper around an [authentication type](trait.AuthType.html),
+/// providing convenient methods to make HTTP requests and work with microversions.
 #[derive(Debug, Clone)]
 pub struct Session {
     auth: Arc<AuthType>,
@@ -57,6 +55,12 @@ impl Session {
             cached_info: Arc::new(cache::MapCache::default()),
             endpoint_interface: None,
         }
+    }
+
+    /// Get a reference to the authentication type in use.
+    #[inline]
+    pub fn auth_type(&self) -> &AuthType {
+        self.auth.as_ref()
     }
 
     /// Endpoint interface in use (if any).
@@ -87,13 +91,27 @@ impl Session {
         self
     }
 
-    /// Get a reference to the authentication type in use.
-    #[inline]
-    pub fn auth_type(&self) -> &AuthType {
-        self.auth.as_ref()
+    /// Get minimum/maximum API (micro)version information.
+    ///
+    /// Returns `None` if the range cannot be determined, which usually means
+    /// that microversioning is not supported.
+    pub fn get_api_versions<Srv: ServiceType + Send>(
+        &self,
+        service: Srv,
+    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
+        let catalog_type = service.catalog_type();
+        self.ensure_service_info(service).map(move |infos| {
+            let min_max = infos
+                .extract(&catalog_type, |info| {
+                    (info.minimum_version, info.current_version)
+                })
+                .expect("No cache record after caching");
+            match min_max {
+                (Some(min), Some(max)) => Some((min, max)),
+                _ => None,
+            }
+        })
     }
-
-    /// Invalidate internal caches.
 
     /// Construct and endpoint for the given service from the path.
     pub fn get_endpoint<Srv, I>(
@@ -119,8 +137,7 @@ impl Session {
 
     /// Get the currently used major version from the given service.
     ///
-    /// Can return `IncompatibleApiVersion` if the service does not support
-    /// API version discovery at all.
+    /// Can return `None` if the service does not support API version discovery at all.
     pub fn get_major_version<Srv: ServiceType + Send>(
         &self,
         service: Srv,
@@ -130,28 +147,6 @@ impl Session {
             infos
                 .extract(&catalog_type, |info| info.major_version)
                 .expect("No cache record after caching")
-        })
-    }
-
-    /// Get minimum/maximum API (micro)version information.
-    ///
-    /// Returns `None` if the range cannot be determined, which usually means
-    /// that microversioning is not supported.
-    pub fn get_api_versions<Srv: ServiceType + Send>(
-        &self,
-        service: Srv,
-    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
-        let catalog_type = service.catalog_type();
-        self.ensure_service_info(service).map(move |infos| {
-            let min_max = infos
-                .extract(&catalog_type, |info| {
-                    (info.minimum_version, info.current_version)
-                })
-                .expect("No cache record after caching");
-            match min_max {
-                (Some(min), Some(max)) => Some((min, max)),
-                _ => None,
-            }
         })
     }
 

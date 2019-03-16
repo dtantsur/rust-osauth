@@ -10,4 +10,6 @@ jobs:
       script: cargo clippy --verbose --package osauth -- -D warnings
       name: "Check clippy warnings (non-voting)"
     - script: cargo test --verbose
-      name: "Run unit tests with default features"
+      name: "Run unit tests"
+    - script: cargo doc --verbose
+      name: "Build documentation"

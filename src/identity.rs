@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! OpenStack Identity V3 API support for access tokens.
+//! Authentication using Identity API v3.
+//!
+//! Currently only supports [Password](struct.Password.html) authentication.
+//! Identity API v2 is not and will not be supported.
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -62,6 +65,67 @@ pub trait Identity {
 }
 
 /// Password authentication using Identity API V3.
+///
+/// For any Identity authentication you need to know `auth_url`, which is an authentication endpoint
+/// of the Identity service. For the Password authentication you also need:
+/// 1. User name and password.
+/// 2. Domain of the user.
+/// 3. Name of the project to use.
+/// 4. Domain of the project.
+///
+/// Note: currently only names are supported for user, user domain and project domain. ID support is
+/// coming later.
+///
+/// Start with creating a `Password` object using [new](#method.new), then add a project scope
+/// with [with_project_scope](#method.with_project_scope):
+///
+/// ```rust,no_run
+/// let auth = osauth::identity::Password::new(
+///     "https://cloud.local/identity",
+///     "admin",
+///     "pa$$w0rd",
+///     "Default"
+/// )
+/// .expect("Invalid auth_url")
+/// .with_project_scope("project1", "Default");
+///
+/// let session = osauth::Session::new(auth);
+/// ```
+///
+/// If your cloud has several regions, pick one using [with_region](#method.with_region):
+///
+/// ```rust,no_run
+/// let auth = osauth::identity::Password::new(
+///     "https://cloud.local/identity",
+///     "admin",
+///     "pa$$w0rd",
+///     "Default"
+/// )
+/// .expect("Invalid auth_url")
+/// .with_project_scope("project1", "Default")
+/// .with_region("US-East");
+///
+/// let session = osauth::Session::new(auth);
+/// ```
+///
+/// By default, the `public` endpoint interface is used. If you would prefer to default to another
+/// one, you can set it with
+/// [with_default_endpoint_interface](#method.with_default_endpoint_interface).
+///
+/// ```rust,no_run
+/// let auth = osauth::identity::Password::new(
+///     "https://cloud.local/identity",
+///     "admin",
+///     "pa$$w0rd",
+///     "Default"
+/// )
+/// .expect("Invalid auth_url")
+/// .with_project_scope("project1", "Default")
+/// .with_default_endpoint_interface("internal");
+/// ```
+///
+/// The authentication token is cached while it's still valid or until
+/// [refresh](../trait.AuthType.html#tymethod.refresh) is called.
 #[derive(Clone, Debug)]
 pub struct Password {
     client: Client,
@@ -80,7 +144,7 @@ impl Identity for Password {
 }
 
 impl Password {
-    /// Create a password authentication against the given Identity service.
+    /// Create a password authentication.
     pub fn new<U, S1, S2, S3>(
         auth_url: U,
         user_name: S1,
@@ -102,7 +166,7 @@ impl Password {
         )
     }
 
-    /// Create a password authentication against the given Identity service.
+    /// Create a password authentication with the provided HTTP client.
     pub fn new_with_client<U, S1, S2, S3>(
         auth_url: U,
         client: Client,
@@ -136,13 +200,21 @@ impl Password {
         })
     }
 
-    /// User name.
+    /// The default endpoint interface.
     #[inline]
-    pub fn user_name(&self) -> &String {
-        &self.body.auth.identity.password.user.name
+    pub fn default_endpoint_interface(&self) -> &String {
+        &self.endpoint_interface
     }
 
-    /// Set a region for this authentication methjod.
+    /// Set the default endpoint interface to use.
+    pub fn set_default_endpoint_interface<S>(&mut self, endpoint_interface: S)
+    where
+        S: Into<String>,
+    {
+        self.endpoint_interface = endpoint_interface.into();
+    }
+
+    /// Set a region for this authentication method.
     pub fn set_region<S>(&mut self, region: S)
     where
         S: Into<String>,
@@ -164,13 +236,13 @@ impl Password {
         ));
     }
 
-    /// Set a region for this authentication methjod.
+    /// Convert this session into one using the given endpoint interface.
     #[inline]
-    pub fn with_region<S>(mut self, region: S) -> Self
+    pub fn with_default_endpoint_interface<S>(mut self, endpoint_interface: S) -> Self
     where
         S: Into<String>,
     {
-        self.set_region(region);
+        self.set_default_endpoint_interface(endpoint_interface);
         self
     }
 
@@ -186,6 +258,16 @@ impl Password {
         S2: Into<String>,
     {
         self.set_project_scope(project_name, project_domain_name);
+        self
+    }
+
+    /// Set a region for this authentication method.
+    #[inline]
+    pub fn with_region<S>(mut self, region: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.set_region(region);
         self
     }
 
@@ -208,28 +290,10 @@ impl Password {
         }
     }
 
-    /// The default endpoint interface.
+    /// User name.
     #[inline]
-    pub fn default_endpoint_interface(&self) -> &String {
-        &self.endpoint_interface
-    }
-
-    /// Set the default endpoint interface to use.
-    pub fn set_default_endpoint_interface<S>(&mut self, endpoint_interface: S)
-    where
-        S: Into<String>,
-    {
-        self.endpoint_interface = endpoint_interface.into();
-    }
-
-    /// Convert this session into one using the given endpoint interface.
-    #[inline]
-    pub fn with_default_endpoint_interface<S>(mut self, endpoint_interface: S) -> Self
-    where
-        S: Into<String>,
-    {
-        self.set_default_endpoint_interface(endpoint_interface);
-        self
+    pub fn user_name(&self) -> &String {
+        &self.body.auth.identity.password.user.name
     }
 
     #[inline]
@@ -304,6 +368,7 @@ impl AuthType for Password {
         }))
     }
 
+    /// Refresh the cached token and service catalog.
     fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send> {
         Box::new(self.do_refresh(true))
     }
