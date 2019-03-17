@@ -37,6 +37,11 @@ type Cache = cache::MapCache<&'static str, ServiceInfo>;
 ///
 /// The session object serves as a wrapper around an [authentication type](trait.AuthType.html),
 /// providing convenient methods to make HTTP requests and work with microversions.
+///
+/// # Note
+///
+/// All clones of one session share the same authentication and endpoint cache. Use
+/// [with_auth_type](#method.with_auth_type) to detach a session.
 #[derive(Debug, Clone)]
 pub struct Session {
     auth: Arc<AuthType>,
@@ -69,6 +74,28 @@ impl Session {
         &self.endpoint_interface
     }
 
+    /// Update the authentication and purges cached endpoint information.
+    ///
+    /// # Warning
+    ///
+    /// Authentication will also be updated for clones of this `Session`, since they share the same
+    /// authentication object.
+    #[inline]
+    pub fn refresh(&mut self) -> impl Future<Item = (), Error = Error> + Send {
+        self.cached_info = Arc::new(cache::MapCache::default());
+        self.auth.refresh()
+    }
+
+    /// Set a new authentication for this `Session`.
+    ///
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
+    #[inline]
+    pub fn set_auth_type<Auth: AuthType + 'static>(&mut self, auth_method: Auth) {
+        self.cached_info = Arc::new(cache::MapCache::default());
+        self.auth = Arc::new(auth_method);
+    }
+
     /// Set endpoint interface to use.
     ///
     /// This call clears the cached service information for this `Session`.
@@ -79,6 +106,13 @@ impl Session {
     {
         self.cached_info = Arc::new(cache::MapCache::default());
         self.endpoint_interface = Some(endpoint_interface.into());
+    }
+
+    /// Convert this session into one using the given authentication.
+    #[inline]
+    pub fn with_auth_type<Auth: AuthType + 'static>(mut self, auth_method: Auth) -> Session {
+        self.set_auth_type(auth_method);
+        self
     }
 
     /// Convert this session into one using the given endpoint interface.
