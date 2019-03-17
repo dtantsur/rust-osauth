@@ -196,14 +196,18 @@ impl Session {
         I::IntoIter: Send,
     {
         let vers = versions.into_iter();
-        let catalog_type = service.catalog_type();
-        self.ensure_service_info(service).map(move |infos| {
-            infos
-                .extract(&catalog_type, |info| {
-                    vers.filter(|item| info.supports_api_version(*item)).max()
-                })
-                .expect("No cache record after caching")
-        })
+        if vers.size_hint().1 == Some(0) {
+            future::Either::A(future::ok(None))
+        } else {
+            let catalog_type = service.catalog_type();
+            future::Either::B(self.ensure_service_info(service).map(move |infos| {
+                infos
+                    .extract(&catalog_type, |info| {
+                        vers.filter(|item| info.supports_api_version(*item)).max()
+                    })
+                    .expect("No cache record after caching")
+            }))
+        }
     }
 
     /// Check if the service supports the API version.
@@ -572,5 +576,64 @@ pub(crate) mod test {
         let s = new_session(URL, service_info);
         let res = s.get_major_version(FAKE).wait().unwrap();
         assert_eq!(res, Some(ApiVersion(2, 0)));
+    }
+
+    fn fake_service_info() -> ServiceInfo {
+        ServiceInfo {
+            root_url: Url::parse(URL).unwrap(),
+            major_version: Some(ApiVersion(2, 0)),
+            minimum_version: Some(ApiVersion(2, 1)),
+            current_version: Some(ApiVersion(2, 42)),
+        }
+    }
+
+    #[test]
+    fn test_pick_api_version_empty() {
+        let service_info = fake_service_info();
+        let s = new_session(URL, service_info);
+        let res = s.pick_api_version(FAKE, None).wait().unwrap();
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_pick_api_version_empty_vec() {
+        let service_info = fake_service_info();
+        let s = new_session(URL, service_info);
+        let res = s.pick_api_version(FAKE, Vec::new()).wait().unwrap();
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_pick_api_version() {
+        let service_info = fake_service_info();
+        let s = new_session(URL, service_info);
+        let choice = vec![
+            ApiVersion(2, 0),
+            ApiVersion(2, 2),
+            ApiVersion(2, 4),
+            ApiVersion(2, 99),
+        ];
+        let res = s.pick_api_version(FAKE, choice).wait().unwrap();
+        assert_eq!(res, Some(ApiVersion(2, 4)));
+    }
+
+    #[test]
+    fn test_pick_api_version_option() {
+        let service_info = fake_service_info();
+        let s = new_session(URL, service_info);
+        let res = s
+            .pick_api_version(FAKE, Some(ApiVersion(2, 4)))
+            .wait()
+            .unwrap();
+        assert_eq!(res, Some(ApiVersion(2, 4)));
+    }
+
+    #[test]
+    fn test_pick_api_version_impossible() {
+        let service_info = fake_service_info();
+        let s = new_session(URL, service_info);
+        let choice = vec![ApiVersion(2, 0), ApiVersion(2, 99)];
+        let res = s.pick_api_version(FAKE, choice).wait().unwrap();
+        assert!(res.is_none());
     }
 }
