@@ -185,20 +185,22 @@ impl Session {
     }
 
     /// Pick the highest API version supported by the service.
-    pub fn pick_api_version<Srv: ServiceType + Send>(
+    pub fn pick_api_version<Srv, I>(
         &self,
         service: Srv,
-        versions: Vec<ApiVersion>,
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
+        versions: I,
+    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send
+    where
+        Srv: ServiceType + Send,
+        I: IntoIterator<Item = ApiVersion>,
+        I::IntoIter: Send,
+    {
+        let vers = versions.into_iter();
         let catalog_type = service.catalog_type();
         self.ensure_service_info(service).map(move |infos| {
             infos
                 .extract(&catalog_type, |info| {
-                    versions
-                        .iter()
-                        .filter(|item| info.supports_api_version(**item))
-                        .max()
-                        .cloned()
+                    vers.filter(|item| info.supports_api_version(*item)).max()
                 })
                 .expect("No cache record after caching")
         })
