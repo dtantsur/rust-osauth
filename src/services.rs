@@ -14,7 +14,7 @@
 
 //! OpenStack service types.
 
-use reqwest::r#async::RequestBuilder;
+use reqwest::header::HeaderMap;
 
 use super::{ApiVersion, Error, ErrorKind};
 
@@ -28,14 +28,14 @@ pub trait ServiceType {
         true
     }
 
-    /// Update the request to include the API version headers.
+    /// Update the headers to include the API version headers.
     ///
     /// The default implementation fails with `IncompatibleApiVersion`.
     fn set_api_version_headers(
         &self,
-        _request: RequestBuilder,
+        _headers: &mut HeaderMap,
         _version: ApiVersion,
-    ) -> Result<RequestBuilder, Error> {
+    ) -> Result<(), Error> {
         Err(Error::new(
             ErrorKind::IncompatibleApiVersion,
             format!(
@@ -124,11 +124,12 @@ impl ServiceType for ComputeService {
 
     fn set_api_version_headers(
         &self,
-        request: RequestBuilder,
+        headers: &mut HeaderMap,
         version: ApiVersion,
-    ) -> Result<RequestBuilder, Error> {
+    ) -> Result<(), Error> {
         // TODO: new-style header support
-        Ok(request.header("x-openstack-nova-api-version", version.to_string()))
+        let _ = headers.insert("x-openstack-nova-api-version", version.into());
+        Ok(())
     }
 }
 

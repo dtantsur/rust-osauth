@@ -17,6 +17,7 @@
 use std::fmt;
 use std::str::FromStr;
 
+use reqwest::header::HeaderValue;
 use serde::de::{Error as DeserError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -36,6 +37,12 @@ fn parse_component(component: &str, message: &str) -> Result<u16, Error> {
     component
         .parse()
         .map_err(|_| Error::new(ErrorKind::InvalidResponse, message))
+}
+
+impl From<ApiVersion> for HeaderValue {
+    fn from(value: ApiVersion) -> HeaderValue {
+        value.to_string().parse().unwrap()
+    }
 }
 
 impl FromStr for ApiVersion {

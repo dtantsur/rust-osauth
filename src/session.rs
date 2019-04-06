@@ -19,6 +19,7 @@ use std::sync::Arc;
 use futures::future;
 use futures::prelude::*;
 use log::{debug, trace};
+use reqwest::header::HeaderMap;
 use reqwest::r#async::{RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
@@ -251,8 +252,9 @@ impl Session {
             })
             .and_then(move |mut builder| {
                 if let Some(version) = api_version {
-                    builder = match service.set_api_version_headers(builder, version) {
-                        Ok(builder) => builder,
+                    let mut headers = HeaderMap::new();
+                    match service.set_api_version_headers(&mut headers, version) {
+                        Ok(()) => builder = builder.headers(headers),
                         Err(err) => return future::err(err),
                     }
                 }
