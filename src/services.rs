@@ -68,8 +68,9 @@ pub enum VersionSelector {
     __Nonexhaustive,
 }
 
+// TODO(dtantsur): change $name to be a literal
 macro_rules! service {
-    ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:ident) => {
+    ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:expr, discovery $disc:expr) => {
         $(#[$attr])*
         #[derive(Copy, Clone, Debug)]
         pub struct $cls {
@@ -85,13 +86,24 @@ macro_rules! service {
 
         impl $crate::services::ServiceType for $cls {
             fn catalog_type(&self) -> &'static str {
-                stringify!($name)
+                $name
+            }
+
+            fn version_discovery_supported(&self) -> bool {
+                $disc
             }
         }
 
         $(#[$attr])*
         pub const $var: $cls = $cls::new();
-    }
+    };
+
+    ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:expr) => {
+        service! {
+            $(#[$attr])*
+            $var: $cls -> $name, discovery true
+        }
+    };
 }
 
 /// A generic service.
@@ -109,12 +121,22 @@ pub struct ComputeService {
 
 service! {
     #[doc = "Image service."]
-    IMAGE: ImageService -> image
+    IMAGE: ImageService -> "image"
 }
 
 service! {
     #[doc = "Network service."]
-    NETWORK: NetworkService -> network
+    NETWORK: NetworkService -> "network"
+}
+
+service! {
+    #[doc = "Object Storage service."]
+    OBJECT_STORAGE: ObjectStorageService -> "object-store", discovery false
+}
+
+service! {
+    #[doc = "Block Storage service (v3)."]
+    BLOCK_STORAGE: BlockStorageService -> "volumev3"
 }
 
 impl GenericService {

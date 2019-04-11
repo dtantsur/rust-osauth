@@ -414,6 +414,24 @@ impl Session {
             .then(request::send_checked)
     }
 
+    /// Issue an empty PUT request.
+    #[inline]
+    pub fn put_empty<Srv, I>(
+        &self,
+        service: Srv,
+        path: I,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = Response, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
+        self.start_put(service, path, api_version)
+            .then(request::send_checked)
+    }
+
     /// PUT a JSON object and receive a JSON back.
     #[inline]
     pub fn put_json<Srv, I, T, R>(
