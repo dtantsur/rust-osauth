@@ -1,5 +1,18 @@
 # Change Log
 
+## 0.2.0 (2019-04-11)
+
+#### Breaking Changes
+
+* **services:**
+  *  change IMAGE and NETWORK to have their own types ([f6c38f33](https://github.com/dtantsur/rust-osauth/commit/f6c38f33a790537770d81a95c9e5e175ed4a5946))
+  *  change set_api_version_headers to accept HeaderMap ([b6edf6b9](https://github.com/dtantsur/rust-osauth/commit/b6edf6b976860fa3e55c679c6341bb483843a00d))
+
+#### Features
+
+* **services:**
+  *  support for object and block storage services ([da885d09](https://github.com/dtantsur/rust-osauth/commit/da885d090c386a3973ab4ab1629e1a8cc09060b8))
+
 ## 0.1.1 (2019-03-31)
 
 #### Bug Fixes
