@@ -68,6 +68,32 @@ pub enum VersionSelector {
     __Nonexhaustive,
 }
 
+macro_rules! service {
+    ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:ident) => {
+        $(#[$attr])*
+        #[derive(Copy, Clone, Debug)]
+        pub struct $cls {
+            __use_new: (),
+        }
+
+        impl $cls {
+            /// Create a new service type.
+            pub const fn new() -> $cls {
+                $cls { __use_new: () }
+            }
+        }
+
+        impl $crate::services::ServiceType for $cls {
+            fn catalog_type(&self) -> &'static str {
+                stringify!($name)
+            }
+        }
+
+        $(#[$attr])*
+        pub const $var: $cls = $cls::new();
+    }
+}
+
 /// A generic service.
 #[derive(Copy, Clone, Debug)]
 pub struct GenericService {
@@ -75,10 +101,20 @@ pub struct GenericService {
     major_version: VersionSelector,
 }
 
-/// The Compute service.
+/// Compute service.
 #[derive(Copy, Clone, Debug)]
 pub struct ComputeService {
     __use_new: (),
+}
+
+service! {
+    #[doc = "Image service."]
+    IMAGE: ImageService -> image
+}
+
+service! {
+    #[doc = "Network service."]
+    NETWORK: NetworkService -> network
 }
 
 impl GenericService {
@@ -135,9 +171,3 @@ impl ServiceType for ComputeService {
 
 /// Compute service.
 pub const COMPUTE: ComputeService = ComputeService::new();
-
-/// Image service.
-pub const IMAGE: GenericService = GenericService::new("image", VersionSelector::Any);
-
-/// Networking service.
-pub const NETWORK: GenericService = GenericService::new("network", VersionSelector::Any);
