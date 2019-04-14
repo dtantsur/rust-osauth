@@ -281,7 +281,7 @@ impl Session {
 
     /// Issue a GET request.
     #[inline]
-    pub fn get<Srv, I, T>(
+    pub fn get<Srv, I>(
         &self,
         service: Srv,
         path: I,
@@ -314,6 +314,49 @@ impl Session {
     {
         self.start_get(service, path, api_version)
             .then(request::fetch_json)
+    }
+
+    /// Fetch a JSON using the GET request with a query.
+    #[inline]
+    pub fn get_json_query<Srv, I, Q, T>(
+        &self,
+        service: Srv,
+        path: I,
+        query: Q,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = T, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        Q: Serialize + Send,
+        T: DeserializeOwned + Send,
+    {
+        self.start_get(service, path, api_version)
+            .map(move |builder| builder.query(&query))
+            .then(request::fetch_json)
+    }
+
+    /// Issue a GET request with a query
+    #[inline]
+    pub fn get_query<Srv, I, Q>(
+        &self,
+        service: Srv,
+        path: I,
+        query: Q,
+        api_version: Option<ApiVersion>,
+    ) -> impl Future<Item = Response, Error = Error> + Send
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        Q: Serialize + Send,
+    {
+        self.start_get(service, path, api_version)
+            .map(move |builder| builder.query(&query))
+            .then(request::send_checked)
     }
 
     /// Start a POST request.
