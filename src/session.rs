@@ -130,6 +130,22 @@ impl Session {
     ///
     /// Returns `None` if the range cannot be determined, which usually means
     /// that microversioning is not supported.
+    ///
+    /// ```rust,no_run
+    /// use futures::Future;
+    ///
+    /// let session =
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let future = session
+    ///     .get_api_versions(osauth::services::COMPUTE)
+    ///     .map(|maybe_versions| {
+    ///         if let Some((min, max)) = maybe_versions {
+    ///             println!("The compute service supports versions {} to {}", min, max);
+    ///         } else {
+    ///             println!("The compute service does not support microversioning");
+    ///         }
+    ///     });
+    /// ```
     pub fn get_api_versions<Srv: ServiceType + Send>(
         &self,
         service: Srv,
@@ -149,6 +165,9 @@ impl Session {
     }
 
     /// Construct and endpoint for the given service from the path.
+    ///
+    /// You won't need to use this call most of the time, since all request calls can fetch the
+    /// endpoint automatically.
     pub fn get_endpoint<Srv, I>(
         &self,
         service: Srv,
@@ -186,6 +205,26 @@ impl Session {
     }
 
     /// Pick the highest API version supported by the service.
+    ///
+    /// Returns `None` if none of the requested versions are available.
+    ///
+    /// ```rust,no_run
+    /// use futures::Future;
+    ///
+    /// let session =
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
+    /// let future = session
+    ///     .pick_api_version(osauth::services::COMPUTE, candidates)
+    ///     .and_then(|maybe_version| {
+    ///         if let Some(version) = maybe_version {
+    ///             println!("Using version {}", version);
+    ///         } else {
+    ///             println!("Using the base version");
+    ///         }
+    ///         session.get(osauth::services::COMPUTE, &["servers"], maybe_version)
+    ///     });
+    /// ```
     pub fn pick_api_version<Srv, I>(
         &self,
         service: Srv,
@@ -226,6 +265,36 @@ impl Session {
     }
 
     /// Make an HTTP request to the given service.
+    ///
+    /// The `service` argument is an object implementing the
+    /// [ServiceType](services/trait.ServiceType.html) trait. Some known service types are available
+    /// in the [services](services/index.html) module.
+    ///
+    /// The `path` argument is a URL path without the service endpoint (e.g. `/servers/1234`).
+    ///
+    /// If `api_version` is set, it is send with the request to enable a higher API version.
+    /// Otherwise the base API version is used. You can use
+    /// [pick_api_version](#method.pick_api_version) to choose an API version to use.
+    ///
+    /// The result is a `RequestBuilder` that can be customized further. Error checking and response
+    /// parsing can be done using functions from the [request](request/index.html) module.
+    ///
+    /// ```rust,no_run
+    /// use futures::Future;
+    /// use reqwest::Method;
+    ///
+    /// let session =
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let future = session
+    ///     .request(osauth::services::COMPUTE, Method::HEAD, &["servers", "1234"], None)
+    ///     .then(osauth::request::send_checked)
+    ///     .map(|response| {
+    ///         println!("Response: {:?}", response);
+    ///     });
+    /// ```
+    ///
+    /// This is the most generic call to make a request. You may prefer to use more specific `get`,
+    /// `post`, `put` or `delete` calls instead.
     pub fn request<Srv, I>(
         &self,
         service: Srv,
@@ -263,6 +332,16 @@ impl Session {
     }
 
     /// Start a GET request.
+    ///
+    /// Use this call if you need some advanced features of the resulting `RequestBuilder`.
+    /// Otherwise use:
+    /// * [get](#method.get) to issue a generic GET without a query.
+    /// * [get_query](#method.get_query) to issue a generic GET with a query.
+    /// * [get_json](#method.get_json) to issue GET and parse a JSON result.
+    /// * [get_json_query](#method.get_json_query) to issue GET with a query and parse a JSON
+    ///   result.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_get<Srv, I>(
         &self,
@@ -280,6 +359,8 @@ impl Session {
     }
 
     /// Issue a GET request.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get<Srv, I>(
         &self,
@@ -298,6 +379,35 @@ impl Session {
     }
 
     /// Fetch a JSON using the GET request.
+    ///
+    /// ```rust,no_run
+    /// use futures::Future;
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct Server {
+    ///     pub id: String,
+    ///     pub name: String,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct ServersRoot {
+    ///     pub servers: Vec<Server>,
+    /// }
+    ///
+    /// let session =
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    ///
+    /// let future = session
+    ///     .get_json(osauth::services::COMPUTE, &["servers"], None)
+    ///     .map(|servers: ServersRoot| {
+    ///         for srv in servers.servers {
+    ///             println!("ID = {}, Name = {}", srv.id, srv.name);
+    ///         }
+    ///     });
+    /// ```
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get_json<Srv, I, T>(
         &self,
@@ -317,6 +427,9 @@ impl Session {
     }
 
     /// Fetch a JSON using the GET request with a query.
+    ///
+    /// See `reqwest` crate documentation for how to define a query.
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get_json_query<Srv, I, Q, T>(
         &self,
@@ -339,6 +452,9 @@ impl Session {
     }
 
     /// Issue a GET request with a query
+    ///
+    /// See `reqwest` crate documentation for how to define a query.
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get_query<Srv, I, Q>(
         &self,
@@ -360,6 +476,8 @@ impl Session {
     }
 
     /// Start a POST request.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_post<Srv, I>(
         &self,
@@ -377,6 +495,10 @@ impl Session {
     }
 
     /// POST a JSON object.
+    ///
+    /// The `body` argument is anything that can be serialized into JSON.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn post<Srv, I, T>(
         &self,
@@ -398,6 +520,10 @@ impl Session {
     }
 
     /// POST a JSON object and receive a JSON back.
+    ///
+    /// The `body` argument is anything that can be serialized into JSON.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn post_json<Srv, I, T, R>(
         &self,
@@ -420,6 +546,8 @@ impl Session {
     }
 
     /// Start a PUT request.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_put<Srv, I>(
         &self,
@@ -437,6 +565,10 @@ impl Session {
     }
 
     /// PUT a JSON object.
+    ///
+    /// The `body` argument is anything that can be serialized into JSON.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn put<Srv, I, T>(
         &self,
@@ -458,6 +590,8 @@ impl Session {
     }
 
     /// Issue an empty PUT request.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn put_empty<Srv, I>(
         &self,
@@ -476,6 +610,10 @@ impl Session {
     }
 
     /// PUT a JSON object and receive a JSON back.
+    ///
+    /// The `body` argument is anything that can be serialized into JSON.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn put_json<Srv, I, T, R>(
         &self,
@@ -498,6 +636,8 @@ impl Session {
     }
 
     /// Start a DELETE request.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_delete<Srv, I>(
         &self,
@@ -515,6 +655,8 @@ impl Session {
     }
 
     /// Issue a DELETE request.
+    ///
+    /// See [reqeust](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn delete<Srv, I>(
         &self,
