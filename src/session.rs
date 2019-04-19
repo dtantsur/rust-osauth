@@ -341,7 +341,7 @@ impl Session {
     /// * [get_json_query](#method.get_json_query) to issue GET with a query and parse a JSON
     ///   result.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_get<Srv, I>(
         &self,
@@ -360,7 +360,7 @@ impl Session {
 
     /// Issue a GET request.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get<Srv, I>(
         &self,
@@ -407,7 +407,7 @@ impl Session {
     ///     });
     /// ```
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get_json<Srv, I, T>(
         &self,
@@ -429,7 +429,7 @@ impl Session {
     /// Fetch a JSON using the GET request with a query.
     ///
     /// See `reqwest` crate documentation for how to define a query.
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get_json_query<Srv, I, Q, T>(
         &self,
@@ -454,7 +454,7 @@ impl Session {
     /// Issue a GET request with a query
     ///
     /// See `reqwest` crate documentation for how to define a query.
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn get_query<Srv, I, Q>(
         &self,
@@ -477,7 +477,7 @@ impl Session {
 
     /// Start a POST request.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_post<Srv, I>(
         &self,
@@ -498,7 +498,7 @@ impl Session {
     ///
     /// The `body` argument is anything that can be serialized into JSON.
     ///
-    /// See [reqeust](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn post<Srv, I, T>(
         &self,
@@ -523,7 +523,7 @@ impl Session {
     ///
     /// The `body` argument is anything that can be serialized into JSON.
     ///
-    /// See [reqeust](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn post_json<Srv, I, T, R>(
         &self,
@@ -547,7 +547,7 @@ impl Session {
 
     /// Start a PUT request.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_put<Srv, I>(
         &self,
@@ -568,7 +568,7 @@ impl Session {
     ///
     /// The `body` argument is anything that can be serialized into JSON.
     ///
-    /// See [reqeust](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn put<Srv, I, T>(
         &self,
@@ -591,7 +591,7 @@ impl Session {
 
     /// Issue an empty PUT request.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn put_empty<Srv, I>(
         &self,
@@ -613,7 +613,7 @@ impl Session {
     ///
     /// The `body` argument is anything that can be serialized into JSON.
     ///
-    /// See [reqeust](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
     pub fn put_json<Srv, I, T, R>(
         &self,
@@ -637,7 +637,7 @@ impl Session {
 
     /// Start a DELETE request.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn start_delete<Srv, I>(
         &self,
@@ -656,7 +656,7 @@ impl Session {
 
     /// Issue a DELETE request.
     ///
-    /// See [reqeust](#method.request) for an explanation of the parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
     pub fn delete<Srv, I>(
         &self,
