@@ -2,7 +2,7 @@
 
 name = "osauth"
 description = "Asynchronous OpenStack session and authentication"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Dmitry Tantsur <divius.inside@gmail.com>"]
 homepage = "https://github.com/dtantsur/rust-osauth"
 repository = "https://github.com/dtantsur/rust-osauth"

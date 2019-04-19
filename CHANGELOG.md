@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.2.1 (2019-04-19)
+
+#### Features
+
+* **session:**  add get_query and get_json_query ([3e14f4fa](https://github.com/dtantsur/rust-osauth/commit/3e14f4fac70d48ab0b00350750ea210623975738))
+
 ## 0.2.0 (2019-04-11)
 
 #### Breaking Changes
