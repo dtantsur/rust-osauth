@@ -24,16 +24,17 @@ fn main() {
     env_logger::init();
     let mut rt = Runtime::new().expect("Cannot create a runtime");
 
-    let session =
-        osauth::from_env().expect("Failed to create an identity provider from the environment");
+    let adapter = osauth::from_env()
+        .expect("Failed to create an identity provider from the environment")
+        .adapter(osauth::services::COMPUTE);
 
     rt.block_on(
-        session
-            .get_major_version(osauth::services::COMPUTE)
+        adapter
+            .get_major_version()
             .map(|maybe_version| {
                 println!("Compute major version is {:?}", maybe_version);
             })
-            .and_then(move |_| session.get_api_versions(osauth::services::COMPUTE))
+            .and_then(move |_| adapter.get_api_versions())
             .map(|maybe_versions| {
                 if let Some((min, max)) = maybe_versions {
                     println!("Microversions: {} to {}", min, max);

@@ -49,6 +49,11 @@
 //!
 //! See [Session](struct.Session.html) documentation for the details on using a `Session` for making
 //! OpenStack calls.
+//!
+//! If you need to work with a small number of servics, [Adapter](struct.Adapter.html) provides a
+//! more convenient interface. An adapter can be created directly using
+//! [Adapter::new](struct.Adapter.html#method.new) or from an existing `Session` using
+//! [Session::adapter](struct.Session.html#method.adapter).
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]
@@ -87,6 +92,7 @@
     while_true
 )]
 
+mod adapter;
 mod apiversion;
 mod auth;
 mod cache;
@@ -98,8 +104,10 @@ mod protocol;
 pub mod request;
 pub mod services;
 mod session;
+mod sessioninner;
 mod url;
 
+pub use crate::adapter::Adapter;
 pub use crate::apiversion::ApiVersion;
 pub use crate::auth::{AuthType, NoAuth};
 pub use crate::config::{from_config, from_env};
