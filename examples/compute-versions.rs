@@ -26,7 +26,7 @@ fn main() {
 
     let adapter = osauth::from_env()
         .expect("Failed to create an identity provider from the environment")
-        .adapter(osauth::services::COMPUTE);
+        .into_adapter(osauth::services::COMPUTE);
 
     rt.block_on(
         adapter

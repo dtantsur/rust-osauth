@@ -57,6 +57,9 @@ impl Session {
     /// The new `Adapter` will share the same authentication and will initially use the same
     /// endpoint interface (although it can be changed later without affecting the `Session`).
     ///
+    /// If you don't need the `Session` any more, using [into_adapter](#method.into_adapter) is a
+    /// bit more efficient.
+    ///
     /// ```rust,no_run
     /// let session =
     ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
@@ -65,6 +68,24 @@ impl Session {
     #[inline]
     pub fn adapter<Srv: ServiceType>(&self, service: Srv) -> Adapter<Srv> {
         Adapter::new_from(self.inner.clone(), service, self.endpoint_interface.clone())
+    }
+
+    /// Create an adapter for the specific service type.
+    ///
+    /// The new `Adapter` will share the same authentication and will initially use the same
+    /// endpoint interface (although it can be changed later without affecting the `Session`).
+    ///
+    /// This method is a bit more efficient than [adapter](#method.adapter) since it does not
+    /// involve cloning internal structures.
+    ///
+    /// ```rust,no_run
+    /// let session =
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let adapter = session.into_adapter(osauth::services::COMPUTE);
+    /// ```
+    #[inline]
+    pub fn into_adapter<Srv: ServiceType>(self, service: Srv) -> Adapter<Srv> {
+        Adapter::new_from(self.inner, service, self.endpoint_interface)
     }
 
     /// Get a reference to the authentication type in use.

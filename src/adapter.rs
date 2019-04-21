@@ -133,7 +133,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// let adapter = osauth::from_env()
     ///     .expect("Failed to create an identity provider from the environment")
-    ///     .adapter(osauth::services::COMPUTE);
+    ///     .into_adapter(osauth::services::COMPUTE);
     /// let future = adapter
     ///     .get_api_versions()
     ///     .map(|maybe_versions| {
@@ -184,7 +184,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// let adapter = osauth::from_env()
     ///     .expect("Failed to create an identity provider from the environment")
-    ///     .adapter(osauth::services::COMPUTE);
+    ///     .into_adapter(osauth::services::COMPUTE);
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let future = adapter
     ///     .pick_api_version(candidates)
@@ -234,7 +234,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// let adapter = osauth::from_env()
     ///     .expect("Failed to create an identity provider from the environment")
-    ///     .adapter(osauth::services::COMPUTE);
+    ///     .into_adapter(osauth::services::COMPUTE);
     /// let future = adapter
     ///     .request(Method::HEAD, &["servers", "1234"], None)
     ///     .then(osauth::request::send_checked)
@@ -327,7 +327,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// let adapter = osauth::from_env()
     ///     .expect("Failed to create an identity provider from the environment")
-    ///     .adapter(osauth::services::COMPUTE);
+    ///     .into_adapter(osauth::services::COMPUTE);
     /// let future = adapter
     ///     .get_json(&["servers"], None)
     ///     .map(|servers: ServersRoot| {

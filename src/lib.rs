@@ -53,7 +53,8 @@
 //! If you need to work with a small number of servics, [Adapter](struct.Adapter.html) provides a
 //! more convenient interface. An adapter can be created directly using
 //! [Adapter::new](struct.Adapter.html#method.new) or from an existing `Session` using
-//! [Session::adapter](struct.Session.html#method.adapter).
+//! [Session::adapter](struct.Session.html#method.adapter) or
+//! [Session::into_adapter](struct.Session.html#method.into_adapter).
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]
