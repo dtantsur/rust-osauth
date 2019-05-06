@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.2.2 (2019-05-06)
+
+#### Features
+
+*   introduce Adapter ([8c9e890d](https://github.com/dtantsur/rust-osauth/commit/8c9e890d415ff411c09bd485ad78fe5e5f537a85))
+* **session:**  add into_adapter ([5019a7a9](https://github.com/dtantsur/rust-osauth/commit/5019a7a960c75b88ea8aa0dd0dc8d299a2003f84))
+
 ## 0.2.1 (2019-04-19)
 
 #### Features
