@@ -153,8 +153,12 @@ pub fn from_env() -> Result<Session, Error> {
         let project_domain =
             env::var("OS_PROJECT_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
 
-        Ok(Session::new(
-            id.with_project_scope(project_name, project_domain),
-        ))
+        let mut session = Session::new(id.with_project_scope(project_name, project_domain));
+
+        if let Ok(interface) = env::var("OS_INTERFACE") {
+            session.set_endpoint_interface(interface)
+        }
+
+        Ok(session)
     }
 }

@@ -26,9 +26,8 @@ fn main() {
     env_logger::init();
     let mut rt = Runtime::new().expect("Cannot create a runtime");
 
-    let adapter = osauth::from_env()
-        .expect("Failed to create an identity provider from the environment")
-        .into_adapter(osauth::services::OBJECT_STORAGE);
+    let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+        .expect("Failed to create an identity provider from the environment");
 
     rt.block_on(
         adapter

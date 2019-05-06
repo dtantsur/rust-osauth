@@ -40,6 +40,12 @@ pub struct Session {
     endpoint_interface: Option<String>,
 }
 
+impl From<Session> for SessionInner {
+    fn from(value: Session) -> SessionInner {
+        value.inner
+    }
+}
+
 impl Session {
     /// Create a new session with a given authentication plugin.
     ///
@@ -66,7 +72,7 @@ impl Session {
     /// let adapter = session.adapter(osauth::services::COMPUTE);
     /// ```
     #[inline]
-    pub fn adapter<Srv: ServiceType>(&self, service: Srv) -> Adapter<Srv> {
+    pub fn adapter<Srv>(&self, service: Srv) -> Adapter<Srv> {
         Adapter::new_from(self.inner.clone(), service, self.endpoint_interface.clone())
     }
 
@@ -84,7 +90,7 @@ impl Session {
     /// let adapter = session.into_adapter(osauth::services::COMPUTE);
     /// ```
     #[inline]
-    pub fn into_adapter<Srv: ServiceType>(self, service: Srv) -> Adapter<Srv> {
+    pub fn into_adapter<Srv>(self, service: Srv) -> Adapter<Srv> {
         Adapter::new_from(self.inner, service, self.endpoint_interface)
     }
 

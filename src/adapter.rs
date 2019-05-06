@@ -20,6 +20,7 @@ use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use super::config;
 use super::request;
 use super::services::ServiceType;
 use super::sessioninner::SessionInner;
@@ -44,6 +45,18 @@ impl<Srv> Adapter<Srv> {
             service,
             endpoint_interface: None,
         }
+    }
+
+    /// Create a new adapter from a `clouds.yaml` configuration file.
+    pub fn from_config<S: AsRef<str>>(cloud_name: S, service: Srv) -> Result<Adapter<Srv>, Error> {
+        Ok(config::from_config(cloud_name)?.into_adapter(service))
+    }
+
+    /// Create a new adapter with information from environment variables.
+    ///
+    /// Uses some of `OS_*` variables recognized by `python-openstackclient`.
+    pub fn from_env(service: Srv) -> Result<Adapter<Srv>, Error> {
+        Ok(config::from_env()?.into_adapter(service))
     }
 
     /// Create a new adapter from its components.
@@ -131,9 +144,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// ```rust,no_run
     /// use futures::Future;
     ///
-    /// let adapter = osauth::from_env()
-    ///     .expect("Failed to create an identity provider from the environment")
-    ///     .into_adapter(osauth::services::COMPUTE);
+    /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let future = adapter
     ///     .get_api_versions()
     ///     .map(|maybe_versions| {
@@ -182,9 +194,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// ```rust,no_run
     /// use futures::Future;
     ///
-    /// let adapter = osauth::from_env()
-    ///     .expect("Failed to create an identity provider from the environment")
-    ///     .into_adapter(osauth::services::COMPUTE);
+    /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let future = adapter
     ///     .pick_api_version(candidates)
@@ -232,9 +243,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// use futures::Future;
     /// use reqwest::Method;
     ///
-    /// let adapter = osauth::from_env()
-    ///     .expect("Failed to create an identity provider from the environment")
-    ///     .into_adapter(osauth::services::COMPUTE);
+    /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let future = adapter
     ///     .request(Method::HEAD, &["servers", "1234"], None)
     ///     .then(osauth::request::send_checked)
