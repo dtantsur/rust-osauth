@@ -68,19 +68,12 @@ impl SessionInner {
         service: Srv,
         endpoint_interface: &Option<String>,
     ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
-        let catalog_type = service.catalog_type();
-        self.ensure_service_info(service, endpoint_interface)
-            .map(move |infos| {
-                let min_max = infos
-                    .extract(&catalog_type, |info| {
-                        (info.minimum_version, info.current_version)
-                    })
-                    .expect("No cache record after caching");
-                match min_max {
-                    (Some(min), Some(max)) => Some((min, max)),
-                    _ => None,
-                }
-            })
+        self.extract_service_info(service, endpoint_interface, |info| {
+            match (info.minimum_version, info.current_version) {
+                (Some(min), Some(max)) => Some((min, max)),
+                _ => None,
+            }
+        })
     }
 
     /// Construct and endpoint for the given service from the path.
@@ -97,14 +90,9 @@ impl SessionInner {
         I::IntoIter: Send,
     {
         let path_iter = path.into_iter();
-        let catalog_type = service.catalog_type();
-        self.ensure_service_info(service, endpoint_interface)
-            .map(move |infos| {
-                let endpoint = infos
-                    .extract(&catalog_type, |info| info.root_url.clone())
-                    .expect("No cache record after caching");
-                url::extend(endpoint, path_iter)
-            })
+        self.extract_service_info(service, endpoint_interface, |info| {
+            url::extend(info.root_url.clone(), path_iter)
+        })
     }
 
     /// Get the currently used major version from the given service.
@@ -113,27 +101,28 @@ impl SessionInner {
         service: Srv,
         endpoint_interface: &Option<String>,
     ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
-        let catalog_type = service.catalog_type();
-        self.ensure_service_info(service, endpoint_interface)
-            .map(move |infos| {
-                infos
-                    .extract(&catalog_type, |info| info.major_version)
-                    .expect("No cache record after caching")
-            })
+        self.extract_service_info(service, endpoint_interface, |info| info.major_version)
     }
 
     /// Ensure service info and return the cache.
-    pub fn ensure_service_info<Srv>(
+    fn extract_service_info<Srv, F, T>(
         &self,
         service: Srv,
         endpoint_interface: &Option<String>,
-    ) -> impl Future<Item = Arc<Cache>, Error = Error>
+        filter: F,
+    ) -> impl Future<Item = T, Error = Error>
     where
         Srv: ServiceType + Send,
+        F: FnOnce(&ServiceInfo) -> T + Send,
+        T: Send,
     {
         let catalog_type = service.catalog_type();
         if self.cached_info.is_set(&catalog_type) {
-            future::Either::A(future::ok(Arc::clone(&self.cached_info)))
+            future::Either::A(future::ok(
+                self.cached_info
+                    .extract(&catalog_type, filter)
+                    .expect("BUG: cached record removed while in extract_service_info"),
+            ))
         } else {
             debug!(
                 "No cached information for service {}, fetching",
@@ -148,8 +137,9 @@ impl SessionInner {
                     .get_endpoint(catalog_type.to_string(), endpoint_interface)
                     .and_then(move |ep| ServiceInfo::fetch(service, ep, auth_type))
                     .map(move |info| {
+                        let value = filter(&info);
                         cached_info.set(catalog_type, info);
-                        cached_info
+                        value
                     }),
             )
         }
@@ -171,16 +161,11 @@ impl SessionInner {
         if vers.size_hint().1 == Some(0) {
             future::Either::A(future::ok(None))
         } else {
-            let catalog_type = service.catalog_type();
-            future::Either::B(self.ensure_service_info(service, endpoint_interface).map(
-                move |infos| {
-                    infos
-                        .extract(&catalog_type, |info| {
-                            vers.filter(|item| info.supports_api_version(*item)).max()
-                        })
-                        .expect("No cache record after caching")
-                },
-            ))
+            future::Either::B(
+                self.extract_service_info(service, endpoint_interface, |info| {
+                    vers.filter(|item| info.supports_api_version(*item)).max()
+                }),
+            )
         }
     }
 
