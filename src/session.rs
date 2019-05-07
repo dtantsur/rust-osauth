@@ -14,16 +14,25 @@
 
 //! Session structure definition.
 
+use std::sync::Arc;
+
+use futures::future;
 use futures::prelude::*;
+use log::{debug, trace};
+use reqwest::header::HeaderMap;
 use reqwest::r#async::{RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use super::cache;
+use super::protocol::ServiceInfo;
 use super::request;
 use super::services::ServiceType;
-use super::sessioninner::SessionInner;
+use super::url;
 use super::{Adapter, ApiVersion, AuthType, Error};
+
+type Cache = cache::MapCache<&'static str, ServiceInfo>;
 
 /// An OpenStack API session.
 ///
@@ -36,14 +45,9 @@ use super::{Adapter, ApiVersion, AuthType, Error};
 /// [with_auth_type](#method.with_auth_type) to detach a session.
 #[derive(Debug, Clone)]
 pub struct Session {
-    inner: SessionInner,
+    auth: Arc<AuthType>,
+    cached_info: Arc<Cache>,
     endpoint_interface: Option<String>,
-}
-
-impl From<Session> for SessionInner {
-    fn from(value: Session) -> SessionInner {
-        value.inner
-    }
 }
 
 impl Session {
@@ -51,9 +55,10 @@ impl Session {
     ///
     /// The resulting session will use the default endpoint interface (usually,
     /// public).
-    pub fn new<Auth: AuthType + 'static>(auth_method: Auth) -> Session {
+    pub fn new<Auth: AuthType + 'static>(auth_type: Auth) -> Session {
         Session {
-            inner: SessionInner::new(auth_method),
+            auth: Arc::new(auth_type),
+            cached_info: Arc::new(cache::MapCache::default()),
             endpoint_interface: None,
         }
     }
@@ -73,7 +78,7 @@ impl Session {
     /// ```
     #[inline]
     pub fn adapter<Srv>(&self, service: Srv) -> Adapter<Srv> {
-        Adapter::new_from(self.inner.clone(), service, self.endpoint_interface.clone())
+        Adapter::from_session(self.clone(), service)
     }
 
     /// Create an adapter for the specific service type.
@@ -91,13 +96,13 @@ impl Session {
     /// ```
     #[inline]
     pub fn into_adapter<Srv>(self, service: Srv) -> Adapter<Srv> {
-        Adapter::new_from(self.inner, service, self.endpoint_interface)
+        Adapter::from_session(self, service)
     }
 
     /// Get a reference to the authentication type in use.
     #[inline]
     pub fn auth_type(&self) -> &AuthType {
-        self.inner.auth_type()
+        self.auth.as_ref()
     }
 
     /// Endpoint interface in use (if any).
@@ -114,7 +119,14 @@ impl Session {
     /// authentication object.
     #[inline]
     pub fn refresh(&mut self) -> impl Future<Item = (), Error = Error> + Send {
-        self.inner.refresh()
+        self.reset_cache();
+        self.auth.refresh()
+    }
+
+    /// Reset the internal cache.
+    #[inline]
+    fn reset_cache(&mut self) {
+        self.cached_info = Arc::new(cache::MapCache::default());
     }
 
     /// Set a new authentication for this `Session`.
@@ -123,7 +135,8 @@ impl Session {
     /// It does not, however, affect clones of this `Session`.
     #[inline]
     pub fn set_auth_type<Auth: AuthType + 'static>(&mut self, auth_type: Auth) {
-        self.inner.set_auth_type(auth_type)
+        self.reset_cache();
+        self.auth = Arc::new(auth_type);
     }
 
     /// Set endpoint interface to use.
@@ -134,7 +147,7 @@ impl Session {
     where
         S: Into<String>,
     {
-        self.inner.reset_cache();
+        self.reset_cache();
         self.endpoint_interface = Some(endpoint_interface.into());
     }
 
@@ -179,8 +192,12 @@ impl Session {
         &self,
         service: Srv,
     ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
-        self.inner
-            .get_api_versions(service, &self.endpoint_interface)
+        self.extract_service_info(service, |info| {
+            match (info.minimum_version, info.current_version) {
+                (Some(min), Some(max)) => Some((min, max)),
+                _ => None,
+            }
+        })
     }
 
     /// Construct and endpoint for the given service from the path.
@@ -198,8 +215,10 @@ impl Session {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.inner
-            .get_endpoint(service, &self.endpoint_interface, path)
+        let path_iter = path.into_iter();
+        self.extract_service_info(service, |info| {
+            url::extend(info.root_url.clone(), path_iter)
+        })
     }
 
     /// Get the currently used major version from the given service.
@@ -209,8 +228,7 @@ impl Session {
         &self,
         service: Srv,
     ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
-        self.inner
-            .get_major_version(service, &self.endpoint_interface)
+        self.extract_service_info(service, |info| info.major_version)
     }
 
     /// Pick the highest API version supported by the service.
@@ -244,8 +262,14 @@ impl Session {
         I: IntoIterator<Item = ApiVersion>,
         I::IntoIter: Send,
     {
-        self.inner
-            .pick_api_version(service, &self.endpoint_interface, versions)
+        let vers = versions.into_iter();
+        if vers.size_hint().1 == Some(0) {
+            future::Either::A(future::ok(None))
+        } else {
+            future::Either::B(self.extract_service_info(service, |info| {
+                vers.filter(|item| info.supports_api_version(*item)).max()
+            }))
+        }
     }
 
     /// Check if the service supports the API version.
@@ -302,8 +326,27 @@ impl Session {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.inner
-            .request(service, &self.endpoint_interface, method, path, api_version)
+        let auth = Arc::clone(&self.auth);
+        self.get_endpoint(service.clone(), path)
+            .and_then(move |url| {
+                trace!(
+                    "Sending HTTP {} request to {} with API version {:?}",
+                    method,
+                    url,
+                    api_version
+                );
+                auth.request(method, url)
+            })
+            .and_then(move |mut builder| {
+                if let Some(version) = api_version {
+                    let mut headers = HeaderMap::new();
+                    match service.set_api_version_headers(&mut headers, version) {
+                        Ok(()) => builder = builder.headers(headers),
+                        Err(err) => return future::err(err),
+                    }
+                }
+                future::ok(builder)
+            })
     }
 
     /// Start a GET request.
@@ -648,6 +691,55 @@ impl Session {
         self.start_delete(service, path, api_version)
             .then(request::send_checked)
     }
+
+    /// Ensure service info and return the cache.
+    fn extract_service_info<Srv, F, T>(
+        &self,
+        service: Srv,
+        filter: F,
+    ) -> impl Future<Item = T, Error = Error>
+    where
+        Srv: ServiceType + Send,
+        F: FnOnce(&ServiceInfo) -> T + Send,
+        T: Send,
+    {
+        let catalog_type = service.catalog_type();
+        if self.cached_info.is_set(&catalog_type) {
+            future::Either::A(future::ok(
+                self.cached_info
+                    .extract(&catalog_type, filter)
+                    .expect("BUG: cached record removed while in extract_service_info"),
+            ))
+        } else {
+            debug!(
+                "No cached information for service {}, fetching",
+                catalog_type
+            );
+
+            let endpoint_interface = self.endpoint_interface.clone();
+            let cached_info = Arc::clone(&self.cached_info);
+            let auth_type = Arc::clone(&self.auth);
+            future::Either::B(
+                self.auth
+                    .get_endpoint(catalog_type.to_string(), endpoint_interface)
+                    .and_then(move |ep| ServiceInfo::fetch(service, ep, auth_type))
+                    .map(move |info| {
+                        let value = filter(&info);
+                        cached_info.set(catalog_type, info);
+                        value
+                    }),
+            )
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cache_fake_service(
+        &mut self,
+        service_type: &'static str,
+        service_info: ServiceInfo,
+    ) {
+        let _ = self.cached_info.set(service_type, service_info);
+    }
 }
 
 #[cfg(test)]
@@ -677,7 +769,7 @@ pub(crate) mod test {
     pub fn new_session(url: &str, service_info: ServiceInfo) -> Session {
         let auth = NoAuth::new(url).unwrap();
         let mut session = Session::new(auth);
-        session.inner.cache_fake_service("fake", service_info);
+        session.cache_fake_service("fake", service_info);
         session
     }
 

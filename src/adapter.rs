@@ -23,8 +23,7 @@ use serde::Serialize;
 use super::config;
 use super::request;
 use super::services::ServiceType;
-use super::sessioninner::SessionInner;
-use super::{ApiVersion, AuthType, Error};
+use super::{ApiVersion, AuthType, Error, Session};
 
 /// Adapter for a specific service.
 ///
@@ -32,22 +31,24 @@ use super::{ApiVersion, AuthType, Error};
 /// service, and thus does not require passing a `service` argument to all calls.
 #[derive(Debug, Clone)]
 pub struct Adapter<Srv> {
-    inner: SessionInner,
+    inner: Session,
     service: Srv,
-    endpoint_interface: Option<String>,
+}
+
+impl<Srv> From<Adapter<Srv>> for Session {
+    fn from(value: Adapter<Srv>) -> Session {
+        value.inner
+    }
 }
 
 impl<Srv> Adapter<Srv> {
     /// Create a new adapter with a given authentication plugin.
     pub fn new<Auth: AuthType + 'static>(auth_type: Auth, service: Srv) -> Adapter<Srv> {
-        Adapter {
-            inner: SessionInner::new(auth_type),
-            service,
-            endpoint_interface: None,
-        }
+        Adapter::from_session(Session::new(auth_type), service)
     }
 
     /// Create a new adapter from a `clouds.yaml` configuration file.
+    #[inline]
     pub fn from_config<S: AsRef<str>>(cloud_name: S, service: Srv) -> Result<Adapter<Srv>, Error> {
         Ok(config::from_config(cloud_name)?.into_adapter(service))
     }
@@ -55,21 +56,17 @@ impl<Srv> Adapter<Srv> {
     /// Create a new adapter with information from environment variables.
     ///
     /// Uses some of `OS_*` variables recognized by `python-openstackclient`.
+    #[inline]
     pub fn from_env(service: Srv) -> Result<Adapter<Srv>, Error> {
         Ok(config::from_env()?.into_adapter(service))
     }
 
-    /// Create a new adapter from its components.
+    /// Create a new adapter from a `Session`.
     #[inline]
-    pub(crate) fn new_from(
-        inner: SessionInner,
-        service: Srv,
-        endpoint_interface: Option<String>,
-    ) -> Adapter<Srv> {
+    pub fn from_session(session: Session, service: Srv) -> Adapter<Srv> {
         Adapter {
-            inner,
+            inner: session,
             service,
-            endpoint_interface,
         }
     }
 
@@ -82,7 +79,7 @@ impl<Srv> Adapter<Srv> {
     /// Endpoint interface in use (if any).
     #[inline]
     pub fn endpoint_interface(&self) -> &Option<String> {
-        &self.endpoint_interface
+        self.inner.endpoint_interface()
     }
 
     /// Update the authentication and purges cached endpoint information.
@@ -94,6 +91,12 @@ impl<Srv> Adapter<Srv> {
     #[inline]
     pub fn refresh(&mut self) -> impl Future<Item = (), Error = Error> + Send {
         self.inner.refresh()
+    }
+
+    /// Session used for this adapter.
+    #[inline]
+    pub fn session(&self) -> &Session {
+        &self.inner
     }
 
     /// Set a new authentication for this `Adapter`.
@@ -113,8 +116,7 @@ impl<Srv> Adapter<Srv> {
     where
         S: Into<String>,
     {
-        self.inner.reset_cache();
-        self.endpoint_interface = Some(endpoint_interface.into());
+        self.inner.set_endpoint_interface(endpoint_interface);
     }
 
     /// Convert this adapter into one using the given authentication.
@@ -159,8 +161,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     pub fn get_api_versions(
         &self,
     ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
-        self.inner
-            .get_api_versions(self.service.clone(), &self.endpoint_interface)
+        self.inner.get_api_versions(self.service.clone())
     }
 
     /// Construct an endpoint from the path;
@@ -173,8 +174,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.inner
-            .get_endpoint(self.service.clone(), &self.endpoint_interface, path)
+        self.inner.get_endpoint(self.service.clone(), path)
     }
 
     /// Get the currently used major version from the given service.
@@ -183,8 +183,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     pub fn get_major_version(
         &self,
     ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
-        self.inner
-            .get_major_version(self.service.clone(), &self.endpoint_interface)
+        self.inner.get_major_version(self.service.clone())
     }
 
     /// Pick the highest API version supported by the service.
@@ -216,8 +215,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         I: IntoIterator<Item = ApiVersion>,
         I::IntoIter: Send,
     {
-        self.inner
-            .pick_api_version(self.service.clone(), &self.endpoint_interface, versions)
+        self.inner.pick_api_version(self.service.clone(), versions)
     }
 
     /// Check if the service supports the API version.
@@ -266,13 +264,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.inner.request(
-            self.service.clone(),
-            &self.endpoint_interface,
-            method,
-            path,
-            api_version,
-        )
+        self.inner
+            .request(self.service.clone(), method, path, api_version)
     }
 
     /// Start a GET request.

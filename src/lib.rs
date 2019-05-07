@@ -105,7 +105,6 @@ mod protocol;
 pub mod request;
 pub mod services;
 mod session;
-mod sessioninner;
 mod url;
 
 pub use crate::adapter::Adapter;
