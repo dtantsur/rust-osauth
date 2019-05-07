@@ -104,6 +104,39 @@ macro_rules! service {
             $var: $cls -> $name, discovery true
         }
     };
+
+    ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:expr, header $hdr:expr) => {
+        $(#[$attr])*
+        #[derive(Copy, Clone, Debug)]
+        pub struct $cls {
+            __use_new: (),
+        }
+
+        impl $cls {
+            /// Create a new service type.
+            pub const fn new() -> $cls {
+                $cls { __use_new: () }
+            }
+        }
+
+        impl $crate::services::ServiceType for $cls {
+            fn catalog_type(&self) -> &'static str {
+                $name
+            }
+
+            fn set_api_version_headers(
+                &self,
+                headers: &mut HeaderMap,
+                version: ApiVersion,
+            ) -> Result<(), Error> {
+                let _ = headers.insert($hdr, version.into());
+                Ok(())
+            }
+        }
+
+        $(#[$attr])*
+        pub const $var: $cls = $cls::new();
+    };
 }
 
 /// A generic service.
@@ -117,6 +150,11 @@ pub struct GenericService {
 #[derive(Copy, Clone, Debug)]
 pub struct ComputeService {
     __use_new: (),
+}
+
+service! {
+    #[doc = "Bare Metal service."]
+    BAREMETAL: BareMetalService -> "baremetal", header "x-openstack-ironic-api-version"
 }
 
 service! {
