@@ -13,6 +13,11 @@ keywords = ["api", "cloud", "openstack"]
 categories = ["api-bindings"]
 edition = "2018"
 
+[features]
+
+default = ["sync"]
+sync = ["tokio"]
+
 [dependencies]
 
 chrono = { version = "^0.4", features = ["serde"] }
@@ -24,10 +29,11 @@ reqwest = "^0.9"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 serde_yaml = "^0.8"
+tokio = { version = "^0.1.13", optional = true }
 
 [dev-dependencies]
 env_logger = "^0.6"
-tokio = "^0.1"
+tokio = "^0.1.13"
 
 [lib]
 

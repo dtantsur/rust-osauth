@@ -361,6 +361,7 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
+    #[deprecated(since = "0.2.3", note = "Use request")]
     pub fn start_get<Srv, I>(
         &self,
         service: Srv,
@@ -392,7 +393,7 @@ impl Session {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.start_get(service, path, api_version)
+        self.request(service, Method::GET, path, api_version)
             .then(request::send_checked)
     }
 
@@ -400,17 +401,12 @@ impl Session {
     ///
     /// ```rust,no_run
     /// use futures::Future;
+    /// use osproto::common::IdAndName;
     /// use serde::Deserialize;
     ///
     /// #[derive(Debug, Deserialize)]
-    /// pub struct Server {
-    ///     pub id: String,
-    ///     pub name: String,
-    /// }
-    ///
-    /// #[derive(Debug, Deserialize)]
     /// pub struct ServersRoot {
-    ///     pub servers: Vec<Server>,
+    ///     pub servers: Vec<IdAndName>,
     /// }
     ///
     /// let session =
@@ -440,7 +436,7 @@ impl Session {
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        self.start_get(service, path, api_version)
+        self.request(service, Method::GET, path, api_version)
             .then(request::fetch_json)
     }
 
@@ -464,7 +460,7 @@ impl Session {
         Q: Serialize + Send,
         T: DeserializeOwned + Send,
     {
-        self.start_get(service, path, api_version)
+        self.request(service, Method::GET, path, api_version)
             .map(move |builder| builder.query(&query))
             .then(request::fetch_json)
     }
@@ -488,7 +484,7 @@ impl Session {
         I::IntoIter: Send,
         Q: Serialize + Send,
     {
-        self.start_get(service, path, api_version)
+        self.request(service, Method::GET, path, api_version)
             .map(move |builder| builder.query(&query))
             .then(request::send_checked)
     }
@@ -497,6 +493,7 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
+    #[deprecated(since = "0.2.3", note = "Use request")]
     pub fn start_post<Srv, I>(
         &self,
         service: Srv,
@@ -532,7 +529,7 @@ impl Session {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        self.start_post(service, path, api_version)
+        self.request(service, Method::POST, path, api_version)
             .map(move |builder| builder.json(&body))
             .then(request::send_checked)
     }
@@ -558,7 +555,7 @@ impl Session {
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
-        self.start_post(service, path, api_version)
+        self.request(service, Method::POST, path, api_version)
             .map(move |builder| builder.json(&body))
             .then(request::fetch_json)
     }
@@ -567,6 +564,7 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
+    #[deprecated(since = "0.2.3", note = "Use request")]
     pub fn start_put<Srv, I>(
         &self,
         service: Srv,
@@ -602,7 +600,7 @@ impl Session {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        self.start_put(service, path, api_version)
+        self.request(service, Method::PUT, path, api_version)
             .map(move |builder| builder.json(&body))
             .then(request::send_checked)
     }
@@ -623,7 +621,7 @@ impl Session {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.start_put(service, path, api_version)
+        self.request(service, Method::PUT, path, api_version)
             .then(request::send_checked)
     }
 
@@ -648,7 +646,7 @@ impl Session {
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
-        self.start_put(service, path, api_version)
+        self.request(service, Method::PUT, path, api_version)
             .map(move |builder| builder.json(&body))
             .then(request::fetch_json)
     }
@@ -657,6 +655,7 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
+    #[deprecated(since = "0.2.3", note = "Use request")]
     pub fn start_delete<Srv, I>(
         &self,
         service: Srv,
@@ -688,7 +687,7 @@ impl Session {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.start_delete(service, path, api_version)
+        self.request(service, Method::DELETE, path, api_version)
             .then(request::send_checked)
     }
 
@@ -773,7 +772,7 @@ pub(crate) mod test {
         session
     }
 
-    const FAKE: GenericService = GenericService::new("fake", VersionSelector::Any);
+    pub const FAKE: GenericService = GenericService::new("fake", VersionSelector::Any);
 
     #[test]
     fn test_get_endpoint() {
@@ -806,25 +805,30 @@ pub(crate) mod test {
         assert!(res.is_none());
     }
 
+    pub const MAJOR_VERSION: ApiVersion = ApiVersion(2, 0);
+
     #[test]
     fn test_get_major_version_present() {
         let service_info = ServiceInfo {
             root_url: Url::parse(URL).unwrap(),
-            major_version: Some(ApiVersion(2, 0)),
+            major_version: Some(MAJOR_VERSION),
             minimum_version: None,
             current_version: None,
         };
         let s = new_session(URL, service_info);
         let res = s.get_major_version(FAKE).wait().unwrap();
-        assert_eq!(res, Some(ApiVersion(2, 0)));
+        assert_eq!(res, Some(MAJOR_VERSION));
     }
 
-    fn fake_service_info() -> ServiceInfo {
+    pub const MIN_VERSION: ApiVersion = ApiVersion(2, 1);
+    pub const MAX_VERSION: ApiVersion = ApiVersion(2, 42);
+
+    pub fn fake_service_info() -> ServiceInfo {
         ServiceInfo {
             root_url: Url::parse(URL).unwrap(),
-            major_version: Some(ApiVersion(2, 0)),
-            minimum_version: Some(ApiVersion(2, 1)),
-            current_version: Some(ApiVersion(2, 42)),
+            major_version: Some(MAJOR_VERSION),
+            minimum_version: Some(MIN_VERSION),
+            current_version: Some(MAX_VERSION),
         }
     }
 
