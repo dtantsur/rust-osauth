@@ -26,11 +26,14 @@ use chrono::{Duration, Local};
 use futures::future;
 use futures::prelude::*;
 use log::{debug, error, trace};
+use osproto::identity as protocol;
 use reqwest::r#async::{Client, RequestBuilder, Response};
 use reqwest::{IntoUrl, Method, Url};
 
 use super::cache::ValueCache;
-use super::{catalog, protocol, request, AuthType, Error, ErrorKind};
+use super::{catalog, request, AuthType, Error, ErrorKind};
+
+pub use osproto::identity::IdOrName;
 
 const MISSING_SUBJECT_HEADER: &str = "Missing X-Subject-Token header";
 const INVALID_SUBJECT_HEADER: &str = "Invalid X-Subject-Token header";
@@ -130,7 +133,7 @@ pub trait Identity {
 pub struct Password {
     client: Client,
     auth_url: Url,
-    body: protocol::ProjectScopedAuthRoot,
+    body: protocol::AuthRoot,
     token_endpoint: String,
     region: Option<String>,
     cached_token: Arc<ValueCache<Token>>,
@@ -187,8 +190,17 @@ impl Password {
         } else {
             format!("{}/v3/auth/tokens", url)
         };
-        let pw = protocol::PasswordIdentity::new(user_name, password, user_domain_name);
-        let body = protocol::ProjectScopedAuthRoot::new(pw, None);
+        let pw = protocol::UserAndPassword {
+            user: protocol::IdOrName::Name(user_name.into()),
+            password: password.into(),
+            domain: Some(protocol::IdOrName::Name(user_domain_name.into())),
+        };
+        let body = protocol::AuthRoot {
+            auth: protocol::Auth {
+                identity: protocol::Identity::Password(pw),
+                scope: None,
+            },
+        };
         Ok(Password {
             client,
             auth_url: url,
@@ -230,10 +242,10 @@ impl Password {
         S1: Into<String>,
         S2: Into<String>,
     {
-        self.body.auth.scope = Some(protocol::ProjectScope::new(
-            project_name,
-            project_domain_name,
-        ));
+        self.body.auth.scope = Some(protocol::Scope::Project(protocol::Project {
+            project: protocol::IdOrName::Name(project_name.into()),
+            domain: Some(protocol::IdOrName::Name(project_domain_name.into())),
+        }));
     }
 
     /// Convert this session into one using the given endpoint interface.
@@ -292,8 +304,31 @@ impl Password {
 
     /// User name.
     #[inline]
+    #[deprecated(since = "0.2.3", note = "Use user in preparation for user ID support.")]
     pub fn user_name(&self) -> &String {
-        &self.body.auth.identity.password.user.name
+        match *self.user() {
+            protocol::IdOrName::Name(ref user) => user,
+            // NOTE(dtantsur): change to panic when we support user IDs.
+            _ => unreachable!(),
+        }
+    }
+
+    /// User name or ID.
+    #[inline]
+    pub fn user(&self) -> &IdOrName {
+        match self.body.auth.identity {
+            protocol::Identity::Password(ref pw) => &pw.user,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Project name or ID (if project scoped).
+    #[inline]
+    pub fn project(&self) -> Option<&IdOrName> {
+        match self.body.auth.scope {
+            Some(protocol::Scope::Project(ref prj)) => Some(&prj.project),
+            _ => None,
+        }
     }
 
     #[inline]
@@ -423,7 +458,7 @@ pub mod test {
     #![allow(unused_results)]
 
     use super::super::AuthType;
-    use super::{Identity, Password};
+    use super::{IdOrName, Identity, Password};
 
     #[test]
     fn test_identity_new() {
@@ -433,7 +468,7 @@ pub mod test {
         assert_eq!(e.host_str().unwrap(), "127.0.0.1");
         assert_eq!(e.port().unwrap(), 8080u16);
         assert_eq!(e.path(), "/");
-        assert_eq!(id.user_name(), "admin");
+        assert_eq!(id.user(), &IdOrName::Name("admin".to_string()));
     }
 
     #[test]
@@ -454,23 +489,10 @@ pub mod test {
         .unwrap()
         .with_project_scope("cool project", "example.com");
         assert_eq!(id.auth_url().to_string(), "http://127.0.0.1:8080/identity");
-        assert_eq!(&id.body.auth.identity.password.user.name, "user");
-        assert_eq!(&id.body.auth.identity.password.user.password, "pa$$w0rd");
+        assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
         assert_eq!(
-            &id.body.auth.identity.password.user.domain.name,
-            "example.com"
-        );
-        assert_eq!(
-            id.body.auth.identity.methods,
-            vec![String::from("password")]
-        );
-        assert_eq!(
-            &id.body.auth.scope.as_ref().unwrap().project.name,
-            "cool project"
-        );
-        assert_eq!(
-            &id.body.auth.scope.as_ref().unwrap().project.domain.name,
-            "example.com"
+            id.project(),
+            Some(&IdOrName::Name("cool project".to_string()))
         );
         assert_eq!(
             &id.token_endpoint,

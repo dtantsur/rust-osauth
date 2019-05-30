@@ -17,6 +17,7 @@
 use std::fmt;
 use std::str::FromStr;
 
+use osproto::common::XdotY;
 use reqwest::header::HeaderValue;
 use serde::de::{Error as DeserError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -26,6 +27,15 @@ use super::{Error, ErrorKind};
 /// API version (major, minor).
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct ApiVersion(pub u16, pub u16);
+
+impl<T> From<XdotY<T>> for ApiVersion
+where
+    T: Into<u16>,
+{
+    fn from(value: XdotY<T>) -> ApiVersion {
+        ApiVersion(value.0.into(), value.1.into())
+    }
+}
 
 impl fmt::Display for ApiVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

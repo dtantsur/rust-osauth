@@ -14,133 +14,19 @@
 
 //! JSON structures and protocol bits for the Identity V3 API.
 
-#![allow(missing_docs)]
-
-use std::str::FromStr;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
-use chrono::{DateTime, FixedOffset};
 use futures::future;
 use futures::prelude::*;
 use log::{debug, trace, warn};
+use osproto::common::{Root, Version};
 use reqwest::{Method, Url};
-use serde::de::{DeserializeOwned, Error as DeserError};
-use serde::{Deserialize, Deserializer, Serialize};
 
 use super::request;
 use super::services::ServiceType;
 use super::url;
 use super::{ApiVersion, AuthType, Error, ErrorKind};
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Link {
-    #[serde(deserialize_with = "deser_url")]
-    pub href: Url,
-    pub rel: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct IdAndName {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct Domain {
-    pub name: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct UserAndPassword {
-    pub name: String,
-    pub password: String,
-    pub domain: Domain,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct PasswordAuth {
-    pub user: UserAndPassword,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct PasswordIdentity {
-    pub methods: Vec<String>,
-    pub password: PasswordAuth,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct Project {
-    pub name: String,
-    pub domain: Domain,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ProjectScope {
-    pub project: Project,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ProjectScopedAuth {
-    pub identity: PasswordIdentity,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<ProjectScope>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ProjectScopedAuthRoot {
-    pub auth: ProjectScopedAuth,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Endpoint {
-    pub interface: String,
-    pub region: String,
-    pub url: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct CatalogRecord {
-    #[serde(rename = "type")]
-    pub service_type: String,
-    pub endpoints: Vec<Endpoint>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct CatalogRoot {
-    pub catalog: Vec<CatalogRecord>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Token {
-    pub roles: Vec<IdAndName>,
-    pub expires_at: DateTime<FixedOffset>,
-    pub catalog: Vec<CatalogRecord>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TokenRoot {
-    pub token: Token,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Version {
-    #[serde(deserialize_with = "deser_version")]
-    pub id: ApiVersion,
-    pub links: Vec<Link>,
-    #[serde(deserialize_with = "empty_as_none", default)]
-    pub status: Option<String>,
-    #[serde(deserialize_with = "empty_as_none", default)]
-    pub version: Option<ApiVersion>,
-    #[serde(deserialize_with = "empty_as_none", default)]
-    pub min_version: Option<ApiVersion>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Root {
-    MultipleVersions { versions: Vec<Version> },
-    OneVersion { version: Version },
-}
 
 /// Information about API endpoint.
 #[derive(Debug)]
@@ -155,18 +41,11 @@ pub struct ServiceInfo {
     pub minimum_version: Option<ApiVersion>,
 }
 
-impl Version {
-    pub fn is_stable(&self) -> bool {
-        if let Some(ref status) = self.status {
-            let upper = status.to_uppercase();
-            upper == "STABLE" || upper == "CURRENT" || upper == "SUPPORTED"
-        } else {
-            true
-        }
-    }
+impl TryFrom<Version> for ServiceInfo {
+    type Error = Error;
 
-    pub fn into_service_info(self) -> Result<ServiceInfo, Error> {
-        let endpoint = match self.links.into_iter().find(|x| &x.rel == "self") {
+    fn try_from(value: Version) -> Result<ServiceInfo, Error> {
+        let endpoint = match value.links.into_iter().find(|x| &x.rel == "self") {
             Some(link) => link.href,
             None => {
                 return Err(Error::new(
@@ -178,68 +57,60 @@ impl Version {
 
         Ok(ServiceInfo {
             root_url: endpoint,
-            major_version: Some(self.id),
-            current_version: self.version,
-            minimum_version: self.min_version,
+            major_version: Some(value.id.into()),
+            current_version: value.version.map(From::from),
+            minimum_version: value.min_version.map(From::from),
         })
     }
 }
 
-impl Root {
-    /// Fetch versioning root from a URL.
-    pub fn fetch(
-        catalog_type: &'static str,
-        endpoint: Url,
-        auth: Arc<AuthType>,
-    ) -> impl Future<Item = Root, Error = Error> {
-        debug!("Fetching {} service info from {}", catalog_type, endpoint);
+#[inline]
+fn fetch_root(
+    catalog_type: &'static str,
+    endpoint: Url,
+    auth: Arc<AuthType>,
+) -> impl Future<Item = Root, Error = Error> {
+    debug!("Fetching {} service info from {}", catalog_type, endpoint);
 
-        auth.request(Method::GET, endpoint)
-            .then(request::fetch_json)
-    }
-
-    /// Extract `ServiceInfo` from a version discovery root.
-    pub fn into_service_info<Srv: ServiceType>(self, service: Srv) -> Result<ServiceInfo, Error> {
-        trace!(
-            "Available major versions for {} service: {:?}",
-            service.catalog_type(),
-            self
-        );
-
-        match self {
-            Root::OneVersion { version: ver } => {
-                if service.major_version_supported(ver.id) {
-                    if !ver.is_stable() {
-                        warn!(
-                            "Using version {:?} of {} API that is not marked as stable",
-                            ver,
-                            service.catalog_type()
-                        );
-                    }
-
-                    ver.into_service_info()
-                } else {
-                    Err(Error::new(
-                        ErrorKind::EndpointNotFound,
-                        "Major version not supported",
-                    ))
-                }
-            }
-            Root::MultipleVersions { versions: mut vers } => {
-                vers.sort_unstable_by_key(|x| x.id);
-                match vers
-                    .into_iter()
-                    .rfind(|x| x.is_stable() && service.major_version_supported(x.id))
-                {
-                    Some(ver) => ver.into_service_info(),
-                    None => Err(Error::new_endpoint_not_found(service.catalog_type())),
-                }
-            }
-        }
-    }
+    auth.request(Method::GET, endpoint)
+        .then(request::fetch_json)
 }
 
 impl ServiceInfo {
+    fn from_root<Srv: ServiceType>(mut value: Root, service: Srv) -> Result<ServiceInfo, Error> {
+        trace!(
+            "Available major versions for {} service: {:?}",
+            service.catalog_type(),
+            value
+        );
+
+        if let Root::OneVersion { version: ver } = value {
+            if service.major_version_supported(ver.id.into()) {
+                if !ver.is_stable() {
+                    warn!(
+                        "Using version {:?} of {} API that is not marked as stable",
+                        ver,
+                        service.catalog_type()
+                    );
+                }
+
+                ServiceInfo::try_from(ver)
+            } else {
+                Err(Error::new(
+                    ErrorKind::EndpointNotFound,
+                    "Major version not supported",
+                ))
+            }
+        } else {
+            value.sort();
+            value
+                .into_stable_iter()
+                .rfind(|x| service.major_version_supported(x.id.into()))
+                .ok_or_else(|| Error::new_endpoint_not_found(service.catalog_type()))
+                .and_then(TryFrom::try_from)
+        }
+    }
+
     /// Whether this service supports the given API version.
     ///
     /// Defaults to false if cannot be determined.
@@ -279,7 +150,7 @@ impl ServiceInfo {
         let catalog_type = service.catalog_type();
 
         future::Either::B(
-            Root::fetch(catalog_type, endpoint.clone(), auth.clone())
+            fetch_root(catalog_type, endpoint.clone(), auth.clone())
                 .or_else(move |e| {
                     if e.kind() == ErrorKind::ResourceNotFound {
                         if url::is_root(&endpoint) {
@@ -287,7 +158,7 @@ impl ServiceInfo {
                             future::Either::A(future::err(err))
                         } else {
                             debug!("Got HTTP 404 from {}, trying parent endpoint", endpoint);
-                            future::Either::B(Root::fetch(
+                            future::Either::B(fetch_root(
                                 catalog_type,
                                 url::pop(endpoint, true),
                                 auth,
@@ -297,7 +168,7 @@ impl ServiceInfo {
                         future::Either::A(future::err(e))
                     }
                 })
-                .and_then(|root| root.into_service_info(service))
+                .and_then(|root| ServiceInfo::from_root(root, service))
                 .map(move |mut info| {
                     // Older Nova returns insecure URLs even for secure protocol.
                     if secure && info.root_url.scheme() == "http" {
@@ -311,181 +182,22 @@ impl ServiceInfo {
     }
 }
 
-const PASSWORD_METHOD: &str = "password";
-
-impl PasswordAuth {
-    fn new<S1, S2, S3>(user_name: S1, password: S2, domain_name: S3) -> PasswordAuth
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-        S3: Into<String>,
-    {
-        PasswordAuth {
-            user: UserAndPassword {
-                name: user_name.into(),
-                password: password.into(),
-                domain: Domain {
-                    name: domain_name.into(),
-                },
-            },
-        }
-    }
-}
-
-impl PasswordIdentity {
-    pub fn new<S1, S2, S3>(user_name: S1, password: S2, domain_name: S3) -> PasswordIdentity
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-        S3: Into<String>,
-    {
-        PasswordIdentity {
-            methods: vec![String::from(PASSWORD_METHOD)],
-            password: PasswordAuth::new(user_name, password, domain_name),
-        }
-    }
-}
-
-impl ProjectScope {
-    pub fn new<S1, S2>(project_name: S1, domain_name: S2) -> ProjectScope
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-    {
-        ProjectScope {
-            project: Project {
-                name: project_name.into(),
-                domain: Domain {
-                    name: domain_name.into(),
-                },
-            },
-        }
-    }
-}
-
-impl ProjectScopedAuthRoot {
-    pub fn new(identity: PasswordIdentity, scope: Option<ProjectScope>) -> ProjectScopedAuthRoot {
-        ProjectScopedAuthRoot {
-            auth: ProjectScopedAuth { identity, scope },
-        }
-    }
-}
-
-/// Deserialize value where empty string equals None.
-pub fn empty_as_none<'de, D, T>(des: D) -> ::std::result::Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let value = serde_json::Value::deserialize(des)?;
-    match value {
-        serde_json::Value::String(ref s) if s == "" => return Ok(None),
-        _ => (),
-    };
-
-    serde_json::from_value(value).map_err(DeserError::custom)
-}
-
-pub fn deser_version<'de, D>(des: D) -> ::std::result::Result<ApiVersion, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = String::deserialize(des)?;
-    if value.is_empty() {
-        return Err(D::Error::custom("Empty version ID"));
-    }
-
-    let version_part = if value.starts_with('v') {
-        &value[1..]
-    } else {
-        &value
-    };
-
-    ApiVersion::from_str(version_part).map_err(D::Error::custom)
-}
-
-/// Deserialize a URL.
-pub fn deser_url<'de, D>(des: D) -> ::std::result::Result<Url, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Url::parse(&String::deserialize(des)?).map_err(DeserError::custom)
-}
-
 #[cfg(test)]
 pub(crate) mod test {
+    use std::convert::TryFrom;
+
+    use osproto::common::{Link, Root, Version, XdotY};
     use reqwest::Url;
 
     use super::super::services::ServiceType;
-    use super::super::ApiVersion;
-    use super::super::ErrorKind;
-    use super::{Link, Root, Version};
-
-    #[test]
-    fn test_version_current_is_stable() {
-        let stable = Version {
-            id: ApiVersion(2, 0),
-            links: Vec::new(),
-            status: Some("CURRENT".to_string()),
-            version: None,
-            min_version: None,
-        };
-        assert!(stable.is_stable());
-    }
-
-    #[test]
-    fn test_version_stable_is_stable() {
-        let stable = Version {
-            id: ApiVersion(2, 0),
-            links: Vec::new(),
-            status: Some("Stable".to_string()),
-            version: None,
-            min_version: None,
-        };
-        assert!(stable.is_stable());
-    }
-
-    #[test]
-    fn test_version_supported_is_stable() {
-        let stable = Version {
-            id: ApiVersion(2, 0),
-            links: Vec::new(),
-            status: Some("supported".to_string()),
-            version: None,
-            min_version: None,
-        };
-        assert!(stable.is_stable());
-    }
-
-    #[test]
-    fn test_version_no_status_is_stable() {
-        let stable = Version {
-            id: ApiVersion(2, 0),
-            links: Vec::new(),
-            status: None,
-            version: None,
-            min_version: None,
-        };
-        assert!(stable.is_stable());
-    }
-
-    #[test]
-    fn test_version_deprecated_is_not_stable() {
-        let unstable = Version {
-            id: ApiVersion(2, 0),
-            links: Vec::new(),
-            status: Some("DEPRECATED".to_string()),
-            version: None,
-            min_version: None,
-        };
-        assert!(!unstable.is_stable());
-    }
+    use super::super::{ApiVersion, ErrorKind};
+    use super::ServiceInfo;
 
     #[test]
     fn test_version_into_service_info() {
         let url = Url::parse("https://example.com/v2").unwrap();
         let ver = Version {
-            id: ApiVersion(2, 0),
+            id: XdotY(2, 0),
             links: vec![
                 Link {
                     href: Url::parse("https://example.com/docs").unwrap(),
@@ -497,10 +209,10 @@ pub(crate) mod test {
                 },
             ],
             status: None,
-            version: Some(ApiVersion(2, 2)),
+            version: Some(XdotY(2, 2)),
             min_version: None,
         };
-        let info = ver.into_service_info().unwrap();
+        let info = ServiceInfo::try_from(ver).unwrap();
         assert_eq!(info.root_url, url);
         assert_eq!(info.major_version, Some(ApiVersion(2, 0)));
         assert_eq!(info.current_version, Some(ApiVersion(2, 2)));
@@ -510,16 +222,16 @@ pub(crate) mod test {
     #[test]
     fn test_version_into_service_info_no_self_link() {
         let ver = Version {
-            id: ApiVersion(2, 0),
+            id: XdotY(2, 0),
             links: vec![Link {
                 href: Url::parse("https://example.com/docs").unwrap(),
                 rel: "other".to_string(),
             }],
             status: None,
-            version: Some(ApiVersion(2, 2)),
+            version: Some(XdotY(2, 2)),
             min_version: None,
         };
-        let err = ver.into_service_info().err().unwrap();
+        let err = ServiceInfo::try_from(ver).err().unwrap();
         assert_eq!(err.kind(), ErrorKind::InvalidResponse);
     }
 
@@ -540,7 +252,7 @@ pub(crate) mod test {
         let url = Url::parse("https://example.com/v1.2").unwrap();
         let root = Root::OneVersion {
             version: Version {
-                id: ApiVersion(1, 2),
+                id: XdotY(1, 2),
                 links: vec![Link {
                     href: url.clone(),
                     rel: "self".to_string(),
@@ -551,7 +263,7 @@ pub(crate) mod test {
             },
         };
 
-        let info = root.into_service_info(ServiceWithDiscovery).unwrap();
+        let info = ServiceInfo::from_root(root, ServiceWithDiscovery).unwrap();
         assert_eq!(info.root_url, url);
         assert_eq!(info.major_version, Some(ApiVersion(1, 2)));
     }
@@ -561,7 +273,7 @@ pub(crate) mod test {
         let url = Url::parse("https://example.com/v1.0").unwrap();
         let root = Root::OneVersion {
             version: Version {
-                id: ApiVersion(1, 0),
+                id: XdotY(1, 0),
                 links: vec![Link {
                     href: url.clone(),
                     rel: "self".to_string(),
@@ -572,7 +284,9 @@ pub(crate) mod test {
             },
         };
 
-        let err = root.into_service_info(ServiceWithDiscovery).err().unwrap();
+        let err = ServiceInfo::from_root(root, ServiceWithDiscovery)
+            .err()
+            .unwrap();
         assert_eq!(err.kind(), ErrorKind::EndpointNotFound);
     }
 
@@ -582,7 +296,7 @@ pub(crate) mod test {
         let root = Root::MultipleVersions {
             versions: vec![
                 Version {
-                    id: ApiVersion(1, 0),
+                    id: XdotY(1, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/1.0").unwrap(),
                         rel: "self".to_string(),
@@ -592,7 +306,7 @@ pub(crate) mod test {
                     min_version: None,
                 },
                 Version {
-                    id: ApiVersion(1, 1),
+                    id: XdotY(1, 1),
                     links: vec![Link {
                         href: Url::parse("https://example.com/1.1").unwrap(),
                         rel: "self".to_string(),
@@ -602,7 +316,7 @@ pub(crate) mod test {
                     min_version: None,
                 },
                 Version {
-                    id: ApiVersion(1, 2),
+                    id: XdotY(1, 2),
                     links: vec![Link {
                         href: url.clone(),
                         rel: "self".to_string(),
@@ -612,7 +326,7 @@ pub(crate) mod test {
                     min_version: None,
                 },
                 Version {
-                    id: ApiVersion(2, 0),
+                    id: XdotY(2, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/2.0").unwrap(),
                         rel: "self".to_string(),
@@ -624,7 +338,7 @@ pub(crate) mod test {
             ],
         };
 
-        let info = root.into_service_info(ServiceWithDiscovery).unwrap();
+        let info = ServiceInfo::from_root(root, ServiceWithDiscovery).unwrap();
         assert_eq!(info.root_url, url);
         assert_eq!(info.major_version, Some(ApiVersion(1, 2)));
     }
@@ -634,7 +348,7 @@ pub(crate) mod test {
         let root = Root::MultipleVersions {
             versions: vec![
                 Version {
-                    id: ApiVersion(1, 0),
+                    id: XdotY(1, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/1.0").unwrap(),
                         rel: "self".to_string(),
@@ -644,7 +358,7 @@ pub(crate) mod test {
                     min_version: None,
                 },
                 Version {
-                    id: ApiVersion(2, 0),
+                    id: XdotY(2, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/2.0").unwrap(),
                         rel: "self".to_string(),
@@ -656,7 +370,9 @@ pub(crate) mod test {
             ],
         };
 
-        let err = root.into_service_info(ServiceWithDiscovery).err().unwrap();
+        let err = ServiceInfo::from_root(root, ServiceWithDiscovery)
+            .err()
+            .unwrap();
         assert_eq!(err.kind(), ErrorKind::EndpointNotFound);
     }
 }

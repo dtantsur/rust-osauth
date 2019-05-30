@@ -14,7 +14,8 @@
 
 //! Low-level code to work with the service catalog.
 
-use super::protocol::{CatalogRecord, Endpoint};
+use osproto::identity::{CatalogRecord, Endpoint};
+
 use super::Error;
 
 /// Find an endpoint in the service catalog.
@@ -47,7 +48,8 @@ pub fn find_endpoint<'c>(
 
 #[cfg(test)]
 pub mod test {
-    use super::super::protocol::{CatalogRecord, Endpoint};
+    use osproto::identity::{CatalogRecord, Endpoint};
+
     use super::super::{Error, ErrorKind};
 
     fn demo_service1() -> CatalogRecord {
