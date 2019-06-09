@@ -1,5 +1,16 @@
 # Change Log
 
+## 0.2.3 (2019-06-09)
+
+#### Features
+
+*   add SyncSession - a synchronous wrapper for Session ([36ad472d](https://github.com/dtantsur/rust-osauth/commit/36ad472dffcf238241a215b9489eda01f1492cba))
+* **services:**  add support for ironic ([ae728f71](https://github.com/dtantsur/rust-osauth/commit/ae728f718d06b6381261148421018c0a3e969a48))
+
+#### Bug Fixes
+
+*   correct object-store example broken in the last merge ([d4b9d0a0](https://github.com/dtantsur/rust-osauth/commit/d4b9d0a04f622c43890f77eaad01aa65be2c9c0a))
+
 ## 0.2.2 (2019-05-06)
 
 #### Features
