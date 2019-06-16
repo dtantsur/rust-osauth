@@ -33,6 +33,7 @@ use super::{ApiVersion, AuthType, Error, Session};
 pub struct Adapter<Srv> {
     inner: Session,
     service: Srv,
+    default_api_version: Option<ApiVersion>,
 }
 
 impl<Srv> From<Adapter<Srv>> for Session {
@@ -67,6 +68,7 @@ impl<Srv> Adapter<Srv> {
         Adapter {
             inner: session,
             service,
+            default_api_version: None,
         }
     }
 
@@ -74,6 +76,12 @@ impl<Srv> Adapter<Srv> {
     #[inline]
     pub fn auth_type(&self) -> &AuthType {
         self.inner.auth_type()
+    }
+
+    /// Default API version used when no version is specified.
+    #[inline]
+    pub fn default_api_version(&self) -> Option<ApiVersion> {
+        self.default_api_version
     }
 
     /// Endpoint interface in use (if any).
@@ -108,6 +116,15 @@ impl<Srv> Adapter<Srv> {
         self.inner.set_auth_type(auth_type)
     }
 
+    /// Set the default API version.
+    ///
+    /// This version will be used when no version is specified. No checks are done against this
+    /// version inside of this call. If it is not valid, the subsequent `request` calls will fail.
+    #[inline]
+    pub fn set_default_api_version(&mut self, api_version: Option<ApiVersion>) {
+        self.default_api_version = api_version;
+    }
+
     /// Set endpoint interface to use.
     ///
     /// This call clears the cached service information for this `Adapter`.
@@ -123,6 +140,13 @@ impl<Srv> Adapter<Srv> {
     #[inline]
     pub fn with_auth_type<Auth: AuthType + 'static>(mut self, auth_method: Auth) -> Adapter<Srv> {
         self.set_auth_type(auth_method);
+        self
+    }
+
+    /// Convert this adapter into one using the given default API version.
+    #[inline]
+    pub fn with_default_api_version(mut self, api_version: Option<ApiVersion>) -> Adapter<Srv> {
+        self.set_default_api_version(api_version);
         self
     }
 
@@ -264,8 +288,9 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
+        let real_version = api_version.or(self.default_api_version);
         self.inner
-            .request(self.service.clone(), method, path, api_version)
+            .request(self.service.clone(), method, path, real_version)
     }
 
     /// Start a GET request.
