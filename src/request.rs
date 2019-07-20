@@ -37,16 +37,15 @@ enum ErrorResponse {
     Message(Message),
 }
 
-fn extract_message(resp: Response) -> impl Future<Item = String, Error = Error> {
-    resp.into_body().concat2().from_err().map(|chunk| {
-        serde_json::from_slice::<ErrorResponse>(&chunk)
+fn extract_message(resp: &mut Response) -> impl Future<Item = String, Error = Error> {
+    resp.text().from_err().map(|text| {
+        serde_json::from_str::<ErrorResponse>(&text)
             .ok()
             .and_then(|body| match body {
                 ErrorResponse::Map(map) => map.into_iter().next().map(|(_k, v)| v.message),
                 ErrorResponse::Message(msg) => Some(msg.message),
             })
-            // TODO(dtantsur): detect the correct encoding? (should go into reqwest)
-            .unwrap_or_else(|| String::from_utf8_lossy(&chunk).into_owned())
+            .unwrap_or(text)
     })
 }
 
@@ -60,10 +59,10 @@ where
     maybe_response
         .map_err(Into::into)
         .into_future()
-        .and_then(|resp| {
+        .and_then(|mut resp| {
             let status = resp.status();
             if status.is_client_error() || status.is_server_error() {
-                Either::B(extract_message(resp).and_then(move |message| {
+                Either::B(extract_message(&mut resp).and_then(move |message| {
                     trace!("HTTP request returned {}; error: {:?}", status, message);
 
                     future::err(Error::new(status.into(), message).with_status(status))
