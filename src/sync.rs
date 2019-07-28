@@ -17,9 +17,11 @@
 //! This module is only available when the `sync` feature is enabled.
 
 use std::cell::RefCell;
+use std::io;
 
+use futures::stream::{Stream, StreamFuture};
 use futures::Future;
-use reqwest::r#async::{RequestBuilder, Response};
+use reqwest::r#async::{Decoder, RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -31,6 +33,19 @@ use super::{ApiVersion, AuthType, Error, Session};
 
 /// A result of an OpenStack operation.
 pub type Result<T> = ::std::result::Result<T, Error>;
+
+/// A reader into an asynchronous stream.
+#[derive(Debug)]
+pub struct SyncStream<'s, S>
+where
+    S: Stream,
+    S::Item: AsRef<[u8]>,
+{
+    session: &'s SyncSession,
+    // NOTE(dtantsur): using Option to be able to take() it.
+    inner: Option<StreamFuture<S>>,
+    chunk: io::Cursor<S::Item>,
+}
 
 /// A synchronous wrapper for an asynchronous session.
 #[derive(Debug)]
@@ -379,6 +394,36 @@ impl SyncSession {
         )
     }
 
+    /// Download a body from a response.
+    ///
+    /// ```rust,no_run
+    /// use std::io::Read;
+    ///
+    /// let session = osauth::sync::SyncSession::new(
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment")
+    /// );
+    ///
+    /// session
+    ///     .get(osauth::services::OBJECT_STORAGE, &["test-container", "test-object"], None)
+    ///     .map(|response| {
+    ///         let mut buffer = Vec::new();
+    ///         session
+    ///             .download(response)
+    ///             .read_to_end(&mut buffer)
+    ///             .map(|_| {
+    ///                 println!("Data: {:?}", buffer);
+    ///             })
+    ///             // Do not do this in production!
+    ///             .expect("Could not read the remote file")
+    ///     })
+    ///     .expect("Could not open the remote file");
+    ///
+    /// ```
+    #[inline]
+    pub fn download(&self, response: Response) -> SyncStream<Decoder> {
+        SyncStream::new(self, response.into_body())
+    }
+
     /// POST a JSON object.
     ///
     /// The `body` argument is anything that can be serialized into JSON.
@@ -547,11 +592,69 @@ impl SyncSession {
     }
 }
 
+impl<'s, S> SyncStream<'s, S>
+where
+    S: Stream,
+    S::Item: AsRef<[u8]> + Default,
+{
+    fn new(session: &'s SyncSession, inner: S) -> SyncStream<'s, S> {
+        SyncStream {
+            session,
+            inner: Some(inner.into_future()),
+            chunk: io::Cursor::default(),
+        }
+    }
+}
+
+impl<'s, S> io::Read for SyncStream<'s, S>
+where
+    S: Stream,
+    S::Item: AsRef<[u8]>,
+    S::Error: Into<Box<dyn ::std::error::Error + Send + Sync>>,
+{
+    /// Read a chunk for the asynchronous stream.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            let existing = self.chunk.read(buf)?;
+            if existing > 0 {
+                // Read something from the current cursor, can quit for now.
+                return Ok(existing);
+            }
+
+            if let Some(fut) = self.inner.take() {
+                let (maybe_chunk, stream) = self
+                    .session
+                    .block_on(fut)
+                    .map_err(|(err, _)| io::Error::new(io::ErrorKind::Other, err))?;
+                if let Some(chunk) = maybe_chunk {
+                    let mut cursor = io::Cursor::new(chunk);
+                    let result = cursor.read(buf)?;
+                    // Save the cursor and the stream for more reads.
+                    self.chunk = cursor;
+                    self.inner = Some(stream.into_future());
+                    // If the cursor has something, we can return, otherwise loop on.
+                    if result > 0 {
+                        return Ok(result);
+                    }
+                } else {
+                    return Ok(0);
+                }
+            } else {
+                return Ok(0);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::io::Read;
+
+    use futures::stream;
+
     use super::super::session::test;
-    use super::super::ApiVersion;
-    use super::SyncSession;
+    use super::super::{ApiVersion, Error};
+    use super::{SyncSession, SyncStream};
 
     fn new_simple_sync_session(url: &str) -> SyncSession {
         SyncSession::new(test::new_simple_session(url))
@@ -655,5 +758,40 @@ mod test {
         let choice = vec![ApiVersion(2, 0), ApiVersion(2, 99)];
         let res = s.pick_api_version(test::FAKE, choice).unwrap();
         assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_stream_empty() {
+        let s = new_sync_session(test::URL);
+        let mut st = SyncStream::new(&s, stream::empty::<Vec<u8>, Error>());
+        let mut buffer = Vec::new();
+        assert_eq!(0, st.read_to_end(&mut buffer).unwrap());
+    }
+
+    #[test]
+    fn test_stream_all() {
+        let s = new_sync_session(test::URL);
+        let data = vec![vec![1u8, 2, 3], vec![4u8], vec![5u8, 6]];
+        let mut st = SyncStream::new(&s, stream::iter_ok::<_, Error>(data.into_iter()));
+        let mut buffer = Vec::new();
+        assert_eq!(6, st.read_to_end(&mut buffer).unwrap());
+        assert_eq!(vec![1, 2, 3, 4, 5, 6], buffer);
+    }
+
+    #[test]
+    fn test_stream_parts() {
+        let s = new_sync_session(test::URL);
+        let data = vec![vec![1u8, 2u8, 3u8], vec![4u8], vec![5u8, 6u8, 7u8, 8u8]];
+        let mut st = SyncStream::new(&s, stream::iter_ok::<_, Error>(data.into_iter()));
+        let mut buffer = [0; 3];
+        assert_eq!(3, st.read(&mut buffer).unwrap());
+        assert_eq!([1, 2, 3], buffer);
+        assert_eq!(1, st.read(&mut buffer).unwrap());
+        assert_eq!([4, 2, 3], buffer);
+        assert_eq!(3, st.read(&mut buffer).unwrap());
+        assert_eq!([5, 6, 7], buffer);
+        assert_eq!(1, st.read(&mut buffer).unwrap());
+        assert_eq!([8, 6, 7], buffer);
+        assert_eq!(0, st.read(&mut buffer).unwrap());
     }
 }
