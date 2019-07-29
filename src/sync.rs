@@ -36,7 +36,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 /// A reader into an asynchronous stream.
 #[derive(Debug)]
-pub struct SyncStream<'s, S>
+pub struct SyncStream<'s, S = Decoder>
 where
     S: Stream,
     S::Item: AsRef<[u8]>,
@@ -420,7 +420,7 @@ impl SyncSession {
     ///
     /// ```
     #[inline]
-    pub fn download(&self, response: Response) -> SyncStream<Decoder> {
+    pub fn download(&self, response: Response) -> SyncStream {
         SyncStream::new(self, response.into_body())
     }
 
