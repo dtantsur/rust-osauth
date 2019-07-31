@@ -20,7 +20,7 @@ use std::cell::RefCell;
 use std::io;
 
 use futures::stream::{Stream, StreamFuture};
-use futures::Future;
+use futures::{Async, Future, Poll};
 use reqwest::r#async::{Decoder, RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
@@ -45,6 +45,13 @@ where
     // NOTE(dtantsur): using Option to be able to take() it.
     inner: Option<StreamFuture<S>>,
     chunk: io::Cursor<S::Item>,
+}
+
+/// A synchronous body that can be used with asynchronous code.
+#[derive(Debug, Clone, Default)]
+pub struct SyncBody<R> {
+    reader: R,
+    buffer: Vec<u8>,
 }
 
 /// A synchronous wrapper for an asynchronous session.
@@ -646,15 +653,42 @@ where
     }
 }
 
+impl<R> SyncBody<R> {
+    /// Create a new body from a reader.
+    pub fn new(body: R) -> SyncBody<R> {
+        SyncBody {
+            reader: body,
+            buffer: vec![0; 1_048_576],
+        }
+    }
+}
+
+impl<R> Stream for SyncBody<R>
+where
+    R: io::Read,
+{
+    type Item = Vec<u8>;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let size = self.reader.read(&mut self.buffer)?;
+        Ok(Async::Ready(if size > 0 {
+            Some(self.buffer[..size].to_vec())
+        } else {
+            None
+        }))
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use std::io::Read;
+    use std::io::{Cursor, Read};
 
     use futures::stream;
 
     use super::super::session::test;
     use super::super::{ApiVersion, Error};
-    use super::{SyncSession, SyncStream};
+    use super::{SyncBody, SyncSession, SyncStream};
 
     fn new_simple_sync_session(url: &str) -> SyncSession {
         SyncSession::new(test::new_simple_session(url))
@@ -793,5 +827,15 @@ mod test {
         assert_eq!(1, st.read(&mut buffer).unwrap());
         assert_eq!([8, 6, 7], buffer);
         assert_eq!(0, st.read(&mut buffer).unwrap());
+    }
+
+    #[test]
+    fn test_body() {
+        let s = new_sync_session(test::URL);
+        let data = vec![42; 16_777_216];
+        let body = SyncBody::new(Cursor::new(data));
+        let mut st = SyncStream::new(&s, body);
+        let mut buffer = Vec::new();
+        assert_eq!(16_777_216, st.read_to_end(&mut buffer).unwrap());
     }
 }
