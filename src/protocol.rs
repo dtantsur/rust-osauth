@@ -130,18 +130,20 @@ impl ServiceInfo {
         endpoint: Url,
         auth: Arc<AuthType>,
     ) -> impl Future<Item = ServiceInfo, Error = Error> {
+        let fallback = ServiceInfo {
+            root_url: endpoint.clone(),
+            major_version: None,
+            current_version: None,
+            minimum_version: None,
+        };
+
         if !service.version_discovery_supported() {
             debug!(
                 "Service {} does not support version discovery, using {}",
                 service.catalog_type(),
                 endpoint
             );
-            return future::Either::A(future::ok(ServiceInfo {
-                root_url: endpoint,
-                major_version: None,
-                current_version: None,
-                minimum_version: None,
-            }));
+            return future::Either::A(future::ok(fallback));
         }
 
         // Workaround for old version of Nova returning HTTP endpoints even if
@@ -169,6 +171,17 @@ impl ServiceInfo {
                     }
                 })
                 .and_then(|root| ServiceInfo::from_root(root, service))
+                .or_else(move |e| {
+                    if e.kind() == ErrorKind::ResourceNotFound {
+                        debug!(
+                            "Service returned ResourceNotFound when attempting version discovery, using {}",
+                            fallback.root_url
+                        );
+                        future::Either::B(future::ok(fallback))
+                    } else {
+                        future::Either::A(future::err(e))
+                    }
+                })
                 .map(move |mut info| {
                     // Older Nova returns insecure URLs even for secure protocol.
                     if secure && info.root_url.scheme() == "http" {
