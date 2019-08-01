@@ -51,7 +51,6 @@ where
 #[derive(Debug, Clone, Default)]
 pub struct SyncBody<R> {
     reader: R,
-    buffer: Vec<u8>,
 }
 
 /// A synchronous wrapper for an asynchronous session.
@@ -655,11 +654,9 @@ where
 
 impl<R> SyncBody<R> {
     /// Create a new body from a reader.
+    #[inline]
     pub fn new(body: R) -> SyncBody<R> {
-        SyncBody {
-            reader: body,
-            buffer: vec![0; 1_048_576],
-        }
+        SyncBody { reader: body }
     }
 }
 
@@ -671,9 +668,11 @@ where
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let size = self.reader.read(&mut self.buffer)?;
+        let mut buffer = vec![0; 16384];
+        let size = self.reader.read(&mut buffer)?;
         Ok(Async::Ready(if size > 0 {
-            Some(self.buffer[..size].to_vec())
+            buffer.truncate(size);
+            Some(buffer)
         } else {
             None
         }))
@@ -832,10 +831,10 @@ mod test {
     #[test]
     fn test_body() {
         let s = new_sync_session(test::URL);
-        let data = vec![42; 16_777_216];
+        let data = vec![42; 16_777_000]; // a bit short of 16 MiB
         let body = SyncBody::new(Cursor::new(data));
         let mut st = SyncStream::new(&s, body);
         let mut buffer = Vec::new();
-        assert_eq!(16_777_216, st.read_to_end(&mut buffer).unwrap());
+        assert_eq!(16_777_000, st.read_to_end(&mut buffer).unwrap());
     }
 }
