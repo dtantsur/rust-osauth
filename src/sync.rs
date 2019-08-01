@@ -21,7 +21,7 @@ use std::io;
 
 use futures::stream::{Stream, StreamFuture};
 use futures::{Async, Future, Poll};
-use reqwest::r#async::{Decoder, RequestBuilder, Response};
+use reqwest::r#async::{Body, Decoder, RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -679,11 +679,23 @@ where
     }
 }
 
+impl<R> From<SyncBody<R>> for Body
+where
+    R: io::Read + Send + 'static,
+{
+    fn from(value: SyncBody<R>) -> Body {
+        let boxed: Box<dyn Stream<Item = Vec<u8>, Error = io::Error> + Send + 'static> =
+            Box::new(value);
+        Body::from(boxed)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::io::{Cursor, Read};
 
     use futures::stream;
+    use reqwest::r#async::Body;
 
     use super::super::session::test;
     use super::super::{ApiVersion, Error};
@@ -836,5 +848,12 @@ mod test {
         let mut st = SyncStream::new(&s, body);
         let mut buffer = Vec::new();
         assert_eq!(16_777_000, st.read_to_end(&mut buffer).unwrap());
+    }
+
+    #[test]
+    fn test_body_to_chunk() {
+        let data = vec![42; 16_777_000]; // a bit short of 16 MiB
+        let body = SyncBody::new(Cursor::new(data));
+        let _ = Body::from(body);
     }
 }
