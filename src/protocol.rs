@@ -172,9 +172,9 @@ impl ServiceInfo {
                 })
                 .and_then(|root| ServiceInfo::from_root(root, service))
                 .or_else(move |e| {
-                    if e.kind() == ErrorKind::ResourceNotFound {
+                    if e.kind() == ErrorKind::EndpointNotFound {
                         debug!(
-                            "Service returned ResourceNotFound when attempting version discovery, using {}",
+                            "Service returned EndpointNotFound when attempting version discovery, using {}",
                             fallback.root_url
                         );
                         future::Either::B(future::ok(fallback))
