@@ -36,17 +36,17 @@ pub trait AuthType: Debug + Sync + Send {
         &self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + Send>;
+    ) -> Box<dyn Future<Item = Url, Error = Error> + Send>;
 
     /// Create an authenticated request.
     fn request(
         &self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send>;
+    ) -> Box<dyn Future<Item = RequestBuilder, Error = Error> + Send>;
 
     /// Refresh the authentication (renew the token, etc).
-    fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send>;
+    fn refresh(&self) -> Box<dyn Future<Item = (), Error = Error> + Send>;
 
     /// Region used with this authentication (if any).
     fn region(&self) -> Option<String> {
@@ -90,7 +90,7 @@ impl AuthType for NoAuth {
         &self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send> {
+    ) -> Box<dyn Future<Item = RequestBuilder, Error = Error> + Send> {
         Box::new(future::ok(self.client.request(method, url)))
     }
 
@@ -99,12 +99,12 @@ impl AuthType for NoAuth {
         &self,
         _service_type: String,
         _endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + Send> {
+    ) -> Box<dyn Future<Item = Url, Error = Error> + Send> {
         Box::new(future::ok(self.endpoint.clone()))
     }
 
     /// This call does nothing for `NoAuth`.
-    fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send> {
+    fn refresh(&self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
         Box::new(future::ok(()))
     }
 }

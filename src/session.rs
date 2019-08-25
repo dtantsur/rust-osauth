@@ -45,7 +45,7 @@ type Cache = cache::MapCache<&'static str, ServiceInfo>;
 /// [with_auth_type](#method.with_auth_type) to detach a session.
 #[derive(Debug, Clone)]
 pub struct Session {
-    auth: Arc<AuthType>,
+    auth: Arc<dyn AuthType>,
     cached_info: Arc<Cache>,
     endpoint_interface: Option<String>,
 }
@@ -101,7 +101,7 @@ impl Session {
 
     /// Get a reference to the authentication type in use.
     #[inline]
-    pub fn auth_type(&self) -> &AuthType {
+    pub fn auth_type(&self) -> &dyn AuthType {
         self.auth.as_ref()
     }
 

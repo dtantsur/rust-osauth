@@ -364,7 +364,7 @@ impl AuthType for Password {
         &self,
         method: Method,
         url: Url,
-    ) -> Box<Future<Item = RequestBuilder, Error = Error> + Send> {
+    ) -> Box<dyn Future<Item = RequestBuilder, Error = Error> + Send> {
         // NOTE(dtantsur): this uses the fact that Client is implemented via Arc.
         let client = self.client.clone();
         Box::new(
@@ -378,7 +378,7 @@ impl AuthType for Password {
         &self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<Future<Item = Url, Error = Error> + Send> {
+    ) -> Box<dyn Future<Item = Url, Error = Error> + Send> {
         let real_interface = endpoint_interface.unwrap_or_else(|| self.endpoint_interface.clone());
         let region = self.region.clone();
         debug!(
@@ -404,7 +404,7 @@ impl AuthType for Password {
     }
 
     /// Refresh the cached token and service catalog.
-    fn refresh(&self) -> Box<Future<Item = (), Error = Error> + Send> {
+    fn refresh(&self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
         Box::new(self.do_refresh(true))
     }
 }

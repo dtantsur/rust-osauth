@@ -74,7 +74,7 @@ impl<Srv> Adapter<Srv> {
 
     /// Get a reference to the authentication type in use.
     #[inline]
-    pub fn auth_type(&self) -> &AuthType {
+    pub fn auth_type(&self) -> &dyn AuthType {
         self.inner.auth_type()
     }
 

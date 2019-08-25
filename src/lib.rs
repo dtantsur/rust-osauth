@@ -62,6 +62,7 @@
 // versions of the compiler. Add more warnings here as you discover them.
 // Taken from https://github.com/rust-unofficial/patterns/
 #![deny(
+    bare_trait_objects,
     const_err,
     dead_code,
     improper_ctypes,

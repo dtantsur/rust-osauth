@@ -68,7 +68,7 @@ impl TryFrom<Version> for ServiceInfo {
 fn fetch_root(
     catalog_type: &'static str,
     endpoint: Url,
-    auth: Arc<AuthType>,
+    auth: Arc<dyn AuthType>,
 ) -> impl Future<Item = Root, Error = Error> {
     debug!("Fetching {} service info from {}", catalog_type, endpoint);
 
@@ -128,7 +128,7 @@ impl ServiceInfo {
     pub fn fetch<Srv: ServiceType>(
         service: Srv,
         endpoint: Url,
-        auth: Arc<AuthType>,
+        auth: Arc<dyn AuthType>,
     ) -> impl Future<Item = ServiceInfo, Error = Error> {
         let fallback = ServiceInfo {
             root_url: endpoint.clone(),
