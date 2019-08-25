@@ -288,7 +288,8 @@ impl Session {
     /// [ServiceType](services/trait.ServiceType.html) trait. Some known service types are available
     /// in the [services](services/index.html) module.
     ///
-    /// The `path` argument is a URL path without the service endpoint (e.g. `/servers/1234`).
+    /// The `path` argument is a URL path without the service endpoint (e.g. `/servers/1234`). For
+    /// an empty path, [NO_PATH](request/constant.NO_PATH.html) can be used.
     ///
     /// If `api_version` is set, it is send with the request to enable a higher API version.
     /// Otherwise the base API version is used. You can use

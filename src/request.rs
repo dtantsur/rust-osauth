@@ -104,3 +104,16 @@ pub fn fetch_json<T: DeserializeOwned + Send, E: Into<Error>>(
 ) -> impl Future<Item = T, Error = Error> + Send {
     send_checked(maybe_builder).and_then(move |mut resp| resp.json().from_err())
 }
+
+/// A properly typed constant for use with root paths.
+///
+/// The problem with just using `None` is that the exact type of `Option` is not known.
+///
+/// An example:
+///
+/// ```rust,no_run
+/// let session =
+///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+/// let future = session.get(osauth::services::OBJECT_STORAGE, osauth::request::NO_PATH, None);
+/// ```
+pub const NO_PATH: Option<&'static str> = None;
