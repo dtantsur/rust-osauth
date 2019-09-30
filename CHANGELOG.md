@@ -1,5 +1,21 @@
 # Change Log
 
+## 0.2.5 (2019-09-30)
+
+#### Features
+
+*   Expose rustls through a feature flag ([1a6190d](https://github.com/dtantsur/rust-osauth/commit/1a6190d463cee053eeeb2ee10bbdd3eec4338af8))
+* **request:**  add NO_PATH ([703cd3d8](https://github.com/dtantsur/rust-osauth/commit/703cd3d8e276d7861941b8248f0a30c7f6f3ea21))
+* **sync:**
+  *  add SyncBody to convert Read into Stream ([e669a500](https://github.com/dtantsur/rust-osauth/commit/e669a500708f6b3c913e21ebba05fb67c3ab2a9b))
+  *  implement download to read from body ([759c8d69](https://github.com/dtantsur/rust-osauth/commit/759c8d690431f42306b38da32b27cdec382392c5))
+
+## 0.2.4 (2019-06-17)
+
+#### Features
+
+* **adapter:** add default_api_version ([2ec1e52](https://github.com/dtantsur/rust-osauth/commit/2ec1e52c34b1c837e2245425c1ccd5546ec717ab))
+
 ## 0.2.3 (2019-06-09)
 
 #### Features
