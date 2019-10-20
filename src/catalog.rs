@@ -14,9 +14,11 @@
 
 //! Low-level code to work with the service catalog.
 
+use log::{debug, error};
 use osproto::identity::{CatalogRecord, Endpoint};
+use reqwest::Url;
 
-use super::Error;
+use super::{Error, ErrorKind};
 
 /// Find an endpoint in the service catalog.
 pub fn find_endpoint<'c>(
@@ -44,6 +46,28 @@ pub fn find_endpoint<'c>(
     }
 
     maybe_endp.ok_or_else(|| Error::new_endpoint_not_found(service_type))
+}
+
+/// Extract a URL from the service catalog.
+pub fn extract_url(
+    catalog: &[CatalogRecord],
+    service_type: &str,
+    endpoint_interface: &str,
+    region: &Option<String>,
+) -> Result<Url, Error> {
+    let endp = find_endpoint(catalog, service_type, endpoint_interface, region)?;
+    debug!("Received {:?} for {}", endp, service_type);
+    Url::parse(&endp.url).map_err(|e| {
+        error!(
+            "Invalid URL {} received from service catalog for service \
+             '{}', interface '{}' from region {:?}: {}",
+            endp.url, service_type, endpoint_interface, region, e
+        );
+        Error::new(
+            ErrorKind::InvalidResponse,
+            format!("Invalid URL {} for {} - {}", endp.url, service_type, e),
+        )
+    })
 }
 
 #[cfg(test)]

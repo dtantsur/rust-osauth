@@ -296,7 +296,7 @@ impl Password {
                     .then(request::check)
                     .and_then(token_from_response)
                     .map(move |token| {
-                        cached_token.set(token.clone());
+                        cached_token.set(token);
                     }),
             )
         }
@@ -337,13 +337,6 @@ impl Password {
         self.do_refresh(false)
             .map(move |()| cached_token.extract(|t| t.value.clone()).unwrap())
     }
-
-    #[inline]
-    fn get_catalog(&self) -> impl Future<Item = Vec<protocol::CatalogRecord>, Error = Error> {
-        let cached_token = Arc::clone(&self.cached_token);
-        self.do_refresh(false)
-            .map(move |()| cached_token.extract(|t| t.body.catalog.clone()).unwrap())
-    }
 }
 
 #[inline]
@@ -379,6 +372,7 @@ impl AuthType for Password {
         service_type: String,
         endpoint_interface: Option<String>,
     ) -> Box<dyn Future<Item = Url, Error = Error> + Send> {
+        let cached_token = Arc::clone(&self.cached_token);
         let real_interface = endpoint_interface.unwrap_or_else(|| self.endpoint_interface.clone());
         let region = self.region.clone();
         debug!(
@@ -386,20 +380,12 @@ impl AuthType for Password {
              '{}' from region {:?}",
             service_type, real_interface, self.region
         );
-        Box::new(self.get_catalog().and_then(move |cat| {
-            let endp = catalog::find_endpoint(&cat, &service_type, &real_interface, &region)?;
-            debug!("Received {:?} for {}", endp, service_type);
-            Url::parse(&endp.url).map_err(|e| {
-                error!(
-                    "Invalid URL {} received from service catalog for service \
-                     '{}', interface '{}' from region {:?}: {}",
-                    endp.url, service_type, real_interface, region, e
-                );
-                Error::new(
-                    ErrorKind::InvalidResponse,
-                    format!("Invalid URL {} for {} - {}", endp.url, service_type, e),
-                )
-            })
+        Box::new(self.do_refresh(false).and_then(move |()| {
+            cached_token
+                .extract(|t| {
+                    catalog::extract_url(&t.body.catalog, &service_type, &real_interface, &region)
+                })
+                .expect("Token is not populated after refreshing")
         }))
     }
 
