@@ -83,7 +83,7 @@ pub trait Identity {
 /// with [with_project_scope](#method.with_project_scope):
 ///
 /// ```rust,no_run
-/// # use osproto::identity::IdOrName;
+/// # use osauth::identity::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -99,7 +99,7 @@ pub trait Identity {
 /// If your cloud has several regions, pick one using [with_region](#method.with_region):
 ///
 /// ```rust,no_run
-/// # use osproto::identity::IdOrName;
+/// # use osauth::identity::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -118,7 +118,7 @@ pub trait Identity {
 /// [with_default_endpoint_interface](#method.with_default_endpoint_interface).
 ///
 /// ```rust,no_run
-/// # use osproto::identity::IdOrName;
+/// # use osauth::identity::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",

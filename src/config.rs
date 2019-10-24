@@ -27,7 +27,7 @@ use serde_yaml;
 use super::identity::Password;
 use super::{Error, ErrorKind, Session};
 
-use osproto::identity::IdOrName;
+use crate::identity::IdOrName;
 
 #[derive(Debug, Deserialize)]
 struct Auth {
