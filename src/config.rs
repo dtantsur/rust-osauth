@@ -27,6 +27,8 @@ use serde_yaml;
 use super::identity::Password;
 use super::{Error, ErrorKind, Session};
 
+use crate::identity::IdOrName;
+
 #[derive(Debug, Deserialize)]
 struct Auth {
     auth_url: String,
@@ -120,7 +122,7 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         .unwrap_or_else(|| String::from("Default"));
     let mut id = Password::new(&auth.auth_url, auth.username, auth.password, user_domain)?;
     if let Some(project_name) = auth.project_name {
-        id.set_project_scope(project_name, project_domain);
+        id.set_project_scope(IdOrName::Name(project_name), IdOrName::Name(project_domain));
     }
     if let Some(region) = cloud.region_name {
         id.set_region(region)
@@ -149,11 +151,16 @@ pub fn from_env() -> Result<Session, Error> {
 
         let id = Password::new(&auth_url, user_name, password, user_domain)?;
 
-        let project_name = _get_env("OS_PROJECT_NAME")?;
-        let project_domain =
-            env::var("OS_PROJECT_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
+        let project = _get_env("OS_PROJECT_ID")
+            .map(IdOrName::Id)
+            .or_else(|_| _get_env("OS_PROJECT_NAME").map(IdOrName::Name))?;
 
-        let mut session = Session::new(id.with_project_scope(project_name, project_domain));
+        let project_domain = _get_env("OS_PROJECT_DOMAIN_ID")
+            .map(IdOrName::Id)
+            .or_else(|_| _get_env("OS_PROJECT_DOMAIN_NAME").map(IdOrName::Name))
+            .ok();
+
+        let mut session = Session::new(id.with_project_scope(project, project_domain));
 
         if let Ok(interface) = env::var("OS_INTERFACE") {
             session.set_endpoint_interface(interface)

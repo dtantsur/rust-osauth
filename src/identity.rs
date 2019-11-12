@@ -83,6 +83,7 @@ pub trait Identity {
 /// with [with_project_scope](#method.with_project_scope):
 ///
 /// ```rust,no_run
+/// # use osauth::identity::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -90,7 +91,7 @@ pub trait Identity {
 ///     "Default"
 /// )
 /// .expect("Invalid auth_url")
-/// .with_project_scope("project1", "Default");
+/// .with_project_scope(IdOrName::Name("project1".to_string()), None);
 ///
 /// let session = osauth::Session::new(auth);
 /// ```
@@ -98,6 +99,7 @@ pub trait Identity {
 /// If your cloud has several regions, pick one using [with_region](#method.with_region):
 ///
 /// ```rust,no_run
+/// # use osauth::identity::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -105,7 +107,7 @@ pub trait Identity {
 ///     "Default"
 /// )
 /// .expect("Invalid auth_url")
-/// .with_project_scope("project1", "Default")
+/// .with_project_scope(IdOrName::Name("project1".to_string()), None)
 /// .with_region("US-East");
 ///
 /// let session = osauth::Session::new(auth);
@@ -116,6 +118,7 @@ pub trait Identity {
 /// [with_default_endpoint_interface](#method.with_default_endpoint_interface).
 ///
 /// ```rust,no_run
+/// # use osauth::identity::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -123,7 +126,7 @@ pub trait Identity {
 ///     "Default"
 /// )
 /// .expect("Invalid auth_url")
-/// .with_project_scope("project1", "Default")
+/// .with_project_scope(IdOrName::Name("project1".to_string()), None)
 /// .with_default_endpoint_interface("internal");
 /// ```
 ///
@@ -237,14 +240,10 @@ impl Password {
     /// Scope authentication to the given project.
     ///
     /// This is required in the most cases.
-    pub fn set_project_scope<S1, S2>(&mut self, project_name: S1, project_domain_name: S2)
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-    {
+    pub fn set_project_scope(&mut self, project: IdOrName, domain: impl Into<Option<IdOrName>>) {
         self.body.auth.scope = Some(protocol::Scope::Project(protocol::Project {
-            project: protocol::IdOrName::Name(project_name.into()),
-            domain: Some(protocol::IdOrName::Name(project_domain_name.into())),
+            project,
+            domain: domain.into(),
         }));
     }
 
@@ -260,16 +259,12 @@ impl Password {
 
     /// Scope authentication to the given project.
     #[inline]
-    pub fn with_project_scope<S1, S2>(
+    pub fn with_project_scope(
         mut self,
-        project_name: S1,
-        project_domain_name: S2,
-    ) -> Password
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-    {
-        self.set_project_scope(project_name, project_domain_name);
+        project: IdOrName,
+        domain: impl Into<Option<IdOrName>>,
+    ) -> Password {
+        self.set_project_scope(project, domain);
         self
     }
 
@@ -473,7 +468,10 @@ pub mod test {
             "example.com",
         )
         .unwrap()
-        .with_project_scope("cool project", "example.com");
+        .with_project_scope(
+            IdOrName::Name("cool project".to_string()),
+            IdOrName::Name("example.com".to_string()),
+        );
         assert_eq!(id.auth_url().to_string(), "http://127.0.0.1:8080/identity");
         assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
         assert_eq!(
