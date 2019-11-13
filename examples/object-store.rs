@@ -12,38 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate env_logger;
-extern crate futures;
-extern crate osauth;
-extern crate tokio;
-
-use futures::Future;
-use tokio::runtime::Runtime;
-
 static DATA: u8 = 42;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
-    let mut rt = Runtime::new().expect("Cannot create a runtime");
-
     let adapter = osauth::Adapter::from_env(osauth::services::OBJECT_STORAGE)
         .expect("Failed to create an identity provider from the environment");
 
-    rt.block_on(
-        adapter
-            .put_empty(&["rust-osauth-test"], None)
-            .and_then(move |_| {
-                println!("Writing {} to rust-osauth-test/test-object", DATA);
-                adapter
-                    .put(&["rust-osauth-test", "test-object"], DATA, None)
-                    .and_then(move |_| {
-                        adapter
-                            .get_json(&["rust-osauth-test", "test-object"], None)
-                            .map(|res: u8| {
-                                println!("Received {} back", res);
-                            })
-                    })
-            }),
-    )
-    .expect("Execution failed");
+    adapter
+        .put_empty(&["rust-osauth-test"], None)
+        .await
+        .expect("Failed to create a container");
+
+    println!("Writing {} to rust-osauth-test/test-object", DATA);
+    adapter
+        .put(&["rust-osauth-test", "test-object"], DATA, None)
+        .await
+        .expect("Failed to upload an object");
+
+    let res: u8 = adapter
+        .get_json(&["rust-osauth-test", "test-object"], None)
+        .await
+        .expect("Failed to download an object");
+    println!("Received {} back", res);
 }

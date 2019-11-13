@@ -17,8 +17,6 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use futures::future;
-use futures::prelude::*;
 use log::{debug, trace, warn};
 use osproto::common::{Root, Version};
 use reqwest::{Method, Url};
@@ -65,15 +63,13 @@ impl TryFrom<Version> for ServiceInfo {
 }
 
 #[inline]
-fn fetch_root(
+async fn fetch_root(
     catalog_type: &'static str,
     endpoint: Url,
     auth: Arc<dyn AuthType>,
-) -> impl Future<Item = Root, Error = Error> {
+) -> Result<Root, Error> {
     debug!("Fetching {} service info from {}", catalog_type, endpoint);
-
-    auth.request(Method::GET, endpoint)
-        .then(request::fetch_json)
+    request::fetch_json(auth.request(Method::GET, endpoint).await?).await
 }
 
 impl ServiceInfo {
@@ -125,11 +121,11 @@ impl ServiceInfo {
     }
 
     /// Generic code to extract a `ServiceInfo` from a URL.
-    pub fn fetch<Srv: ServiceType>(
+    pub async fn fetch<Srv: ServiceType>(
         service: Srv,
         endpoint: Url,
         auth: Arc<dyn AuthType>,
-    ) -> impl Future<Item = ServiceInfo, Error = Error> {
+    ) -> Result<ServiceInfo, Error> {
         let fallback = ServiceInfo {
             root_url: endpoint.clone(),
             major_version: None,
@@ -143,7 +139,7 @@ impl ServiceInfo {
                 service.catalog_type(),
                 endpoint
             );
-            return future::Either::A(future::ok(fallback));
+            return Ok(fallback);
         }
 
         // Workaround for old version of Nova returning HTTP endpoints even if
@@ -151,47 +147,39 @@ impl ServiceInfo {
         let secure = endpoint.scheme() == "https";
         let catalog_type = service.catalog_type();
 
-        future::Either::B(
-            fetch_root(catalog_type, endpoint.clone(), auth.clone())
-                .or_else(move |e| {
-                    if e.kind() == ErrorKind::ResourceNotFound {
-                        if url::is_root(&endpoint) {
-                            let err = Error::new_endpoint_not_found(catalog_type);
-                            future::Either::A(future::err(err))
-                        } else {
-                            debug!("Got HTTP 404 from {}, trying parent endpoint", endpoint);
-                            future::Either::B(fetch_root(
-                                catalog_type,
-                                url::pop(endpoint, true),
-                                auth,
-                            ))
-                        }
-                    } else {
-                        future::Either::A(future::err(e))
-                    }
-                })
-                .and_then(|root| ServiceInfo::from_root(root, service))
-                .or_else(move |e| {
-                    if e.kind() == ErrorKind::EndpointNotFound {
-                        debug!(
-                            "Service returned EndpointNotFound when attempting version discovery, using {}",
-                            fallback.root_url
-                        );
-                        future::Either::B(future::ok(fallback))
-                    } else {
-                        future::Either::A(future::err(e))
-                    }
-                })
-                .map(move |mut info| {
-                    // Older Nova returns insecure URLs even for secure protocol.
-                    if secure && info.root_url.scheme() == "http" {
-                        info.root_url.set_scheme("https").unwrap();
-                    }
+        let root = match fetch_root(catalog_type, endpoint.clone(), auth.clone()).await {
+            Ok(root) => root,
+            Err(e) if e.kind() == ErrorKind::ResourceNotFound => {
+                if url::is_root(&endpoint) {
+                    let err = Error::new_endpoint_not_found(catalog_type);
+                    return Err(err);
+                } else {
+                    debug!("Got HTTP 404 from {}, trying parent endpoint", endpoint);
+                    fetch_root(catalog_type, url::pop(endpoint, true), auth).await?
+                }
+            }
+            Err(e) => return Err(e),
+        };
 
-                    debug!("Received {:?} for {} service", info, catalog_type);
-                    info
-                }),
-        )
+        let mut info = ServiceInfo::from_root(root, service).or_else(move |e| {
+            if e.kind() == ErrorKind::EndpointNotFound {
+                debug!(
+                    "Service returned EndpointNotFound when attempting version discovery, using {}",
+                    fallback.root_url
+                );
+                Ok(fallback)
+            } else {
+                Err(e)
+            }
+        })?;
+
+        // Older Nova returns insecure URLs even for secure protocol.
+        if secure && info.root_url.scheme() == "http" {
+            info.root_url.set_scheme("https").unwrap();
+        }
+
+        debug!("Received {:?} for {} service", info, catalog_type);
+        Ok(info)
     }
 }
 

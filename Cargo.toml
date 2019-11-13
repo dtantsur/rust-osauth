@@ -15,28 +15,26 @@ edition = "2018"
 
 [features]
 
-default = ["sync", "native-tls"]
-sync = ["tokio"]
+default = ["native-tls"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls-tls"]
 
-
 [dependencies]
 
+async-trait = "^0.1"
 chrono = { version = "^0.4", features = ["serde"] }
-dirs = "^1.0"
-futures = "^0.1"
+dirs = "^2.0"
 log = "^0.4"
-osproto = "^0.1.0"
-reqwest = { version = "^0.9.19", default-features = false }
+osproto = "^0.2.0"
+reqwest = { version = "^0.10", default-features = false, features = ["gzip", "json", "stream"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 serde_yaml = "^0.8"
-tokio = { version = "^0.1.13", optional = true }
 
 [dev-dependencies]
-env_logger = "^0.6"
-tokio = "^0.1.13"
+
+env_logger = "^0.7"
+tokio = { version = "^0.2.0", features = ["macros"] }
 
 [lib]
 

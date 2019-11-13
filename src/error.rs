@@ -17,7 +17,7 @@
 use std::fmt;
 
 use reqwest::Error as HttpClientError;
-use reqwest::{StatusCode, UrlError};
+use reqwest::StatusCode;
 
 /// Kind of an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -192,10 +192,14 @@ impl From<StatusCode> for ErrorKind {
 impl From<HttpClientError> for Error {
     fn from(value: HttpClientError) -> Error {
         let msg = value.to_string();
-        let kind = value
-            .status()
-            .map(From::from)
-            .unwrap_or(ErrorKind::ProtocolError);
+        let kind = if value.is_builder() {
+            ErrorKind::InvalidInput
+        } else {
+            value
+                .status()
+                .map(From::from)
+                .unwrap_or(ErrorKind::ProtocolError)
+        };
 
         let error = Error::new(kind, msg);
         if let Some(status) = value.status() {
@@ -203,12 +207,6 @@ impl From<HttpClientError> for Error {
         } else {
             error
         }
-    }
-}
-
-impl From<UrlError> for Error {
-    fn from(value: UrlError) -> Error {
-        Error::new(ErrorKind::InvalidInput, value.to_string())
     }
 }
 

@@ -22,13 +22,11 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use chrono::{Duration, Local};
-use futures::future;
-use futures::prelude::*;
 use log::{debug, error, trace};
 use osproto::identity as protocol;
-use reqwest::r#async::{Client, RequestBuilder, Response};
-use reqwest::{IntoUrl, Method, Url};
+use reqwest::{Client, IntoUrl, Method, RequestBuilder, Response, Url};
 
 use super::cache::ValueCache;
 use super::{catalog, request, AuthType, Error, ErrorKind};
@@ -323,23 +321,19 @@ impl Password {
         self
     }
 
-    fn do_refresh(&self, force: bool) -> impl Future<Item = (), Error = Error> {
-        if !force && self.cached_token.validate(token_alive) {
-            future::Either::A(future::ok(()))
-        } else {
+    async fn do_refresh(&self, force: bool) -> Result<(), Error> {
+        if force || !self.cached_token.validate(token_alive) {
             let cached_token = Arc::clone(&self.cached_token);
-            future::Either::B(
-                self.client
-                    .post(&self.token_endpoint)
-                    .json(&self.body)
-                    .send()
-                    .then(request::check)
-                    .and_then(token_from_response)
-                    .map(move |token| {
-                        cached_token.set(token);
-                    }),
-            )
+            let resp = self
+                .client
+                .post(&self.token_endpoint)
+                .json(&self.body)
+                .send()
+                .await?;
+            let token = token_from_response(request::check(resp).await?).await?;
+            cached_token.set(token);
         }
+        Ok(())
     }
 
     /// User name.
@@ -372,10 +366,10 @@ impl Password {
     }
 
     #[inline]
-    fn get_token(&self) -> impl Future<Item = String, Error = Error> {
+    async fn get_token(&self) -> Result<String, Error> {
         let cached_token = Arc::clone(&self.cached_token);
-        self.do_refresh(false)
-            .map(move |()| cached_token.extract(|t| t.value.clone()).unwrap())
+        self.do_refresh(false).await?;
+        Ok(cached_token.extract(|t| t.value.clone()).unwrap())
     }
 }
 
@@ -386,6 +380,7 @@ fn token_alive(value: &Token) -> bool {
     validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
 }
 
+#[async_trait]
 impl AuthType for Password {
     /// Get region.
     fn region(&self) -> Option<String> {
@@ -393,25 +388,20 @@ impl AuthType for Password {
     }
 
     /// Create an authenticated request.
-    fn request(
-        &self,
-        method: Method,
-        url: Url,
-    ) -> Box<dyn Future<Item = RequestBuilder, Error = Error> + Send> {
-        // NOTE(dtantsur): this uses the fact that Client is implemented via Arc.
-        let client = self.client.clone();
-        Box::new(
-            self.get_token()
-                .map(move |token| client.request(method, url).header("x-auth-token", token)),
-        )
+    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
+        let token = self.get_token().await?;
+        Ok(self
+            .client
+            .request(method, url)
+            .header("x-auth-token", token))
     }
 
     /// Get a URL for the requested service.
-    fn get_endpoint(
+    async fn get_endpoint(
         &self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<dyn Future<Item = Url, Error = Error> + Send> {
+    ) -> Result<Url, Error> {
         let cached_token = Arc::clone(&self.cached_token);
         let real_interface = endpoint_interface.unwrap_or_else(|| self.endpoint_interface.clone());
         let region = self.region.clone();
@@ -420,25 +410,24 @@ impl AuthType for Password {
              '{}' from region {:?}",
             service_type, real_interface, self.region
         );
-        Box::new(self.do_refresh(false).and_then(move |()| {
-            cached_token
-                .extract(|t| {
-                    catalog::extract_url(&t.body.catalog, &service_type, &real_interface, &region)
-                })
-                .expect("Token is not populated after refreshing")
-        }))
+        self.do_refresh(false).await?;
+        cached_token
+            .extract(|t| {
+                catalog::extract_url(&t.body.catalog, &service_type, &real_interface, &region)
+            })
+            .expect("Token is not populated after refreshing")
     }
 
     /// Refresh the cached token and service catalog.
-    fn refresh(&self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
-        Box::new(self.do_refresh(true))
+    async fn refresh(&self) -> Result<(), Error> {
+        self.do_refresh(true).await
     }
 }
 
-fn token_from_response(mut resp: Response) -> impl Future<Item = Token, Error = Error> {
+async fn token_from_response(resp: Response) -> Result<Token, Error> {
     let value = match resp.headers().get("x-subject-token") {
         Some(hdr) => match hdr.to_str() {
-            Ok(s) => s.to_string(),
+            Ok(s) => Ok(s.to_string()),
             Err(e) => {
                 error!(
                     "Invalid X-Subject-Token {:?} received from {}: {}",
@@ -446,37 +435,28 @@ fn token_from_response(mut resp: Response) -> impl Future<Item = Token, Error = 
                     resp.url(),
                     e
                 );
-                return future::Either::A(future::err(Error::new(
+                Err(Error::new(
                     ErrorKind::InvalidResponse,
                     INVALID_SUBJECT_HEADER,
-                )));
+                ))
             }
         },
         None => {
             error!("No X-Subject-Token header received from {}", resp.url());
-            return future::Either::A(future::err(Error::new(
+            Err(Error::new(
                 ErrorKind::InvalidResponse,
                 MISSING_SUBJECT_HEADER,
-            )));
+            ))
         }
-    };
+    }?;
 
-    future::Either::B(
-        resp.json::<protocol::TokenRoot>()
-            .from_err()
-            .map(move |root| {
-                debug!(
-                    "Received a token from {} expiring at {}",
-                    resp.url(),
-                    root.token.expires_at
-                );
-                trace!("Received catalog: {:?}", root.token.catalog);
-                Token {
-                    value,
-                    body: root.token,
-                }
-            }),
-    )
+    let root = resp.json::<protocol::TokenRoot>().await?;
+    debug!("Received a token expiring at {}", root.token.expires_at);
+    trace!("Received catalog: {:?}", root.token.catalog);
+    Ok(Token {
+        value,
+        body: root.token,
+    })
 }
 
 #[cfg(test)]

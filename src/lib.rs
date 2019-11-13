@@ -102,8 +102,6 @@ mod protocol;
 pub mod request;
 pub mod services;
 mod session;
-#[cfg(feature = "sync")]
-pub mod sync;
 mod url;
 
 pub use crate::adapter::Adapter;

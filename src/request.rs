@@ -16,10 +16,8 @@
 
 use std::collections::HashMap;
 
-use futures::future::{self, Either};
-use futures::prelude::*;
 use log::trace;
-use reqwest::r#async::{RequestBuilder, Response};
+use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
@@ -37,72 +35,60 @@ enum ErrorResponse {
     Message(Message),
 }
 
-fn extract_message(resp: &mut Response) -> impl Future<Item = String, Error = Error> {
-    resp.text().from_err().map(|text| {
-        serde_json::from_str::<ErrorResponse>(&text)
-            .ok()
-            .and_then(|body| match body {
-                ErrorResponse::Map(map) => map.into_iter().next().map(|(_k, v)| v.message),
-                ErrorResponse::Message(msg) => Some(msg.message),
-            })
-            .unwrap_or(text)
-    })
+async fn extract_message(resp: Response) -> Result<String, Error> {
+    let text = resp.text().await?;
+    Ok(serde_json::from_str::<ErrorResponse>(&text)
+        .ok()
+        .and_then(|body| match body {
+            ErrorResponse::Map(map) => map.into_iter().next().map(|(_k, v)| v.message),
+            ErrorResponse::Message(msg) => Some(msg.message),
+        })
+        .unwrap_or(text))
 }
 
 /// Check the response and convert errors into OpenStack ones.
-pub fn check<E>(
-    maybe_response: Result<Response, E>,
-) -> impl Future<Item = Response, Error = Error> + Send
-where
-    E: Into<Error>,
-{
-    maybe_response
-        .map_err(Into::into)
-        .into_future()
-        .and_then(|mut resp| {
-            let status = resp.status();
-            if status.is_client_error() || status.is_server_error() {
-                Either::B(extract_message(&mut resp).and_then(move |message| {
-                    trace!("HTTP request returned {}; error: {:?}", status, message);
-
-                    future::err(Error::new(status.into(), message).with_status(status))
-                }))
-            } else {
-                trace!("HTTP request to {} returned {}", resp.url(), resp.status());
-                Either::A(future::ok(resp))
-            }
-        })
+pub async fn check(response: Response) -> Result<Response, Error> {
+    let status = response.status();
+    if status.is_client_error() || status.is_server_error() {
+        let message = extract_message(response).await?;
+        trace!("HTTP request returned {}; error: {:?}", status, message);
+        Err(Error::new(status.into(), message).with_status(status))
+    } else {
+        trace!(
+            "HTTP request to {} returned {}",
+            response.url(),
+            response.status()
+        );
+        Ok(response)
+    }
 }
 
 /// Send the request and check its result.
 #[inline]
-pub fn send_checked<E>(
-    maybe_builder: Result<RequestBuilder, E>,
-) -> impl Future<Item = Response, Error = Error> + Send
-where
-    E: Into<Error>,
-{
-    maybe_builder
-        .map_err(Into::into)
-        .into_future()
-        .and_then(|builder| builder.send().from_err())
-        .then(check)
+pub async fn send_checked(builder: RequestBuilder) -> Result<Response, Error> {
+    check(builder.send().await?).await
 }
 
 /// Check the response and convert it to a JSON.
 #[inline]
-pub fn to_json<T: DeserializeOwned + Send, E: Into<Error>>(
-    maybe_response: Result<Response, E>,
-) -> impl Future<Item = T, Error = Error> + Send {
-    check(maybe_response).and_then(move |mut resp| resp.json().from_err())
+pub async fn to_json<T>(response: Response) -> Result<T, Error>
+where
+    T: DeserializeOwned + Send,
+{
+    check(response).await?.json::<T>().await.map_err(Into::into)
 }
 
 /// Send the response and convert the response to a JSON.
 #[inline]
-pub fn fetch_json<T: DeserializeOwned + Send, E: Into<Error>>(
-    maybe_builder: Result<RequestBuilder, E>,
-) -> impl Future<Item = T, Error = Error> + Send {
-    send_checked(maybe_builder).and_then(move |mut resp| resp.json().from_err())
+pub async fn fetch_json<T>(builder: RequestBuilder) -> Result<T, Error>
+where
+    T: DeserializeOwned + Send,
+{
+    send_checked(builder)
+        .await?
+        .json::<T>()
+        .await
+        .map_err(Into::into)
 }
 
 /// A properly typed constant for use with root paths.

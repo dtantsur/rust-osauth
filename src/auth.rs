@@ -16,9 +16,8 @@
 
 use std::fmt::Debug;
 
-use futures::{future, Future};
-use reqwest::r#async::{Client, RequestBuilder};
-use reqwest::{IntoUrl, Method, Url};
+use async_trait::async_trait;
+use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 
 use super::Error;
 
@@ -30,23 +29,20 @@ use super::Error;
 /// 2. get an endpoint URL for the given service type.
 ///
 /// An authentication type should cache the token as long as it's valid.
+#[async_trait]
 pub trait AuthType: Debug + Sync + Send {
     /// Get a URL for the requested service.
-    fn get_endpoint(
+    async fn get_endpoint(
         &self,
         service_type: String,
         endpoint_interface: Option<String>,
-    ) -> Box<dyn Future<Item = Url, Error = Error> + Send>;
+    ) -> Result<Url, Error>;
 
     /// Create an authenticated request.
-    fn request(
-        &self,
-        method: Method,
-        url: Url,
-    ) -> Box<dyn Future<Item = RequestBuilder, Error = Error> + Send>;
+    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error>;
 
     /// Refresh the authentication (renew the token, etc).
-    fn refresh(&self) -> Box<dyn Future<Item = (), Error = Error> + Send>;
+    async fn refresh(&self) -> Result<(), Error>;
 
     /// Region used with this authentication (if any).
     fn region(&self) -> Option<String> {
@@ -84,35 +80,30 @@ impl NoAuth {
     }
 }
 
+#[async_trait]
 impl AuthType for NoAuth {
     /// Create a request.
-    fn request(
-        &self,
-        method: Method,
-        url: Url,
-    ) -> Box<dyn Future<Item = RequestBuilder, Error = Error> + Send> {
-        Box::new(future::ok(self.client.request(method, url)))
+    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
+        Ok(self.client.request(method, url))
     }
 
     /// Get a predefined endpoint for all service types
-    fn get_endpoint(
+    async fn get_endpoint(
         &self,
         _service_type: String,
         _endpoint_interface: Option<String>,
-    ) -> Box<dyn Future<Item = Url, Error = Error> + Send> {
-        Box::new(future::ok(self.endpoint.clone()))
+    ) -> Result<Url, Error> {
+        Ok(self.endpoint.clone())
     }
 
     /// This call does nothing for `NoAuth`.
-    fn refresh(&self) -> Box<dyn Future<Item = (), Error = Error> + Send> {
-        Box::new(future::ok(()))
+    async fn refresh(&self) -> Result<(), Error> {
+        Ok(())
     }
 }
 
 #[cfg(test)]
 pub mod test {
-    use futures::Future;
-
     use super::{AuthType, NoAuth};
 
     #[test]
@@ -130,10 +121,10 @@ pub mod test {
         let _ = NoAuth::new("foo bar").err().unwrap();
     }
 
-    #[test]
-    fn test_noauth_get_endpoint() {
+    #[tokio::test]
+    async fn test_noauth_get_endpoint() {
         let a = NoAuth::new("http://127.0.0.1:8080/v1").unwrap();
-        let e = a.get_endpoint(String::from("foobar"), None).wait().unwrap();
+        let e = a.get_endpoint(String::from("foobar"), None).await.unwrap();
         assert_eq!(e.scheme(), "http");
         assert_eq!(e.host_str().unwrap(), "127.0.0.1");
         assert_eq!(e.port().unwrap(), 8080u16);

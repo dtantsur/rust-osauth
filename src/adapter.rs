@@ -14,9 +14,7 @@
 
 //! Adapter for a specific service.
 
-use futures::Future;
-use reqwest::r#async::{RequestBuilder, Response};
-use reqwest::{Method, Url};
+use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -97,8 +95,8 @@ impl<Srv> Adapter<Srv> {
     /// Authentication will also be updated for clones of this `Adapter` and its parent `Session`,
     /// since they share the same authentication object.
     #[inline]
-    pub fn refresh(&mut self) -> impl Future<Item = (), Error = Error> + Send {
-        self.inner.refresh()
+    pub async fn refresh(&mut self) -> Result<(), Error> {
+        self.inner.refresh().await
     }
 
     /// Session used for this adapter.
@@ -168,46 +166,45 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// that microversioning is not supported.
     ///
     /// ```rust,no_run
-    /// use futures::Future;
-    ///
+    /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
     ///     .expect("Failed to create an identity provider from the environment");
-    /// let future = adapter
+    /// let maybe_versions = adapter
     ///     .get_api_versions()
-    ///     .map(|maybe_versions| {
-    ///         if let Some((min, max)) = maybe_versions {
-    ///             println!("The compute service supports versions {} to {}", min, max);
-    ///         } else {
-    ///             println!("The compute service does not support microversioning");
-    ///         }
-    ///     });
+    ///     .await?;
+    /// if let Some((min, max)) = maybe_versions {
+    ///     println!("The compute service supports versions {} to {}", min, max);
+    /// } else {
+    ///     println!("The compute service does not support microversioning");
+    /// }
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
     /// ```
-    pub fn get_api_versions(
-        &self,
-    ) -> impl Future<Item = Option<(ApiVersion, ApiVersion)>, Error = Error> + Send {
-        self.inner.get_api_versions(self.service.clone())
+    #[inline]
+    pub async fn get_api_versions(&self) -> Result<Option<(ApiVersion, ApiVersion)>, Error> {
+        self.inner.get_api_versions(self.service.clone()).await
     }
 
     /// Construct an endpoint from the path;
     ///
     /// You won't need to use this call most of the time, since all request calls can fetch the
     /// endpoint automatically.
-    pub fn get_endpoint<I>(&self, path: I) -> impl Future<Item = Url, Error = Error> + Send
+    pub async fn get_endpoint<I>(&self, path: I) -> Result<Url, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.inner.get_endpoint(self.service.clone(), path)
+        self.inner.get_endpoint(self.service.clone(), path).await
     }
 
     /// Get the currently used major version from the given service.
     ///
     /// Can return `None` if the service does not support API version discovery at all.
-    pub fn get_major_version(
-        &self,
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send {
-        self.inner.get_major_version(self.service.clone())
+    #[inline]
+    pub async fn get_major_version(&self) -> Result<Option<ApiVersion>, Error> {
+        self.inner.get_major_version(self.service.clone()).await
     }
 
     /// Pick the highest API version supported by the service.
@@ -215,39 +212,39 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// Returns `None` if none of the requested versions are available.
     ///
     /// ```rust,no_run
-    /// use futures::Future;
-    ///
+    /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
     ///     .expect("Failed to create an identity provider from the environment");
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
-    /// let future = adapter
+    /// let maybe_version = adapter
     ///     .pick_api_version(candidates)
-    ///     .and_then(|maybe_version| {
-    ///         if let Some(version) = maybe_version {
-    ///             println!("Using version {}", version);
-    ///         } else {
-    ///             println!("Using the base version");
-    ///         }
-    ///         adapter.get(&["servers"], maybe_version)
-    ///     });
+    ///     .await?;
+    /// if let Some(version) = maybe_version {
+    ///     println!("Using version {}", version);
+    /// } else {
+    ///     println!("Using the base version");
+    /// }
+    /// let response = adapter.get(&["servers"], maybe_version).await?;
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
     /// ```
-    pub fn pick_api_version<I>(
-        &self,
-        versions: I,
-    ) -> impl Future<Item = Option<ApiVersion>, Error = Error> + Send
+    pub async fn pick_api_version<I>(&self, versions: I) -> Result<Option<ApiVersion>, Error>
     where
         I: IntoIterator<Item = ApiVersion>,
         I::IntoIter: Send,
     {
-        self.inner.pick_api_version(self.service.clone(), versions)
+        self.inner
+            .pick_api_version(self.service.clone(), versions)
+            .await
     }
 
     /// Check if the service supports the API version.
-    pub fn supports_api_version(
-        &self,
-        version: ApiVersion,
-    ) -> impl Future<Item = bool, Error = Error> + Send {
-        self.pick_api_version(Some(version)).map(|x| x.is_some())
+    #[inline]
+    pub async fn supports_api_version(&self, version: ApiVersion) -> Result<bool, Error> {
+        self.pick_api_version(Some(version))
+            .await
+            .map(|x| x.is_some())
     }
 
     /// Make an HTTP request.
@@ -262,27 +259,29 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// parsing can be done using functions from the [request](request/index.html) module.
     ///
     /// ```rust,no_run
-    /// use futures::Future;
-    /// use reqwest::Method;
-    ///
+    /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
     ///     .expect("Failed to create an identity provider from the environment");
-    /// let future = adapter
-    ///     .request(Method::HEAD, &["servers", "1234"], None)
-    ///     .then(osauth::request::send_checked)
-    ///     .map(|response| {
-    ///         println!("Response: {:?}", response);
-    ///     });
+    /// let response = osauth::request::send_checked(
+    ///     adapter
+    ///         .request(reqwest::Method::HEAD, &["servers", "1234"], None)
+    ///         .await?
+    ///     )
+    ///     .await?;
+    /// println!("Response: {:?}", response);
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
     /// ```
     ///
     /// This is the most generic call to make a request. You may prefer to use more specific `get`,
     /// `post`, `put` or `delete` calls instead.
-    pub fn request<I>(
+    pub async fn request<I>(
         &self,
         method: Method,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -291,55 +290,26 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         let real_version = api_version.or(self.default_api_version);
         self.inner
             .request(self.service.clone(), method, path, real_version)
-    }
-
-    /// Start a GET request.
-    ///
-    /// Use this call if you need some advanced features of the resulting `RequestBuilder`.
-    /// Otherwise use:
-    /// * [get](#method.get) to issue a generic GET without a query.
-    /// * [get_query](#method.get_query) to issue a generic GET with a query.
-    /// * [get_json](#method.get_json) to issue GET and parse a JSON result.
-    /// * [get_json_query](#method.get_json_query) to issue GET with a query and parse a JSON
-    ///   result.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub fn start_get<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-    {
-        self.request(Method::GET, path, api_version)
+            .await
     }
 
     /// Issue a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = Response, Error = Error> + Send
+    pub async fn get<I>(&self, path: I, api_version: Option<ApiVersion>) -> Result<Response, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.start_get(path, api_version)
-            .then(request::send_checked)
+        request::send_checked(self.request(Method::GET, path, api_version).await?).await
     }
 
     /// Fetch a JSON using the GET request.
     ///
     /// ```rust,no_run
-    /// use futures::Future;
+    /// # async fn example() -> Result<(), osauth::Error> {
     /// use serde::Deserialize;
     ///
     /// #[derive(Debug, Deserialize)]
@@ -356,29 +326,27 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// let adapter = osauth::from_env()
     ///     .expect("Failed to create an identity provider from the environment")
     ///     .into_adapter(osauth::services::COMPUTE);
-    /// let future = adapter
+    /// let servers: ServersRoot = adapter
     ///     .get_json(&["servers"], None)
-    ///     .map(|servers: ServersRoot| {
-    ///         for srv in servers.servers {
-    ///             println!("ID = {}, Name = {}", srv.id, srv.name);
-    ///         }
-    ///     });
+    ///     .await?;
+    /// for srv in servers.servers {
+    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
+    /// }
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
     /// ```
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get_json<I, T>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = T, Error = Error> + Send
+    pub async fn get_json<I, T>(&self, path: I, api_version: Option<ApiVersion>) -> Result<T, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        self.start_get(path, api_version).then(request::fetch_json)
+        request::fetch_json(self.request(Method::GET, path, api_version).await?).await
     }
 
     /// Fetch a JSON using the GET request with a query.
@@ -386,12 +354,12 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// See `reqwest` crate documentation for how to define a query.
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get_json_query<I, Q, T>(
+    pub async fn get_json_query<I, Q, T>(
         &self,
         path: I,
         query: Q,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = T, Error = Error> + Send
+    ) -> Result<T, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -399,9 +367,12 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         Q: Serialize + Send,
         T: DeserializeOwned + Send,
     {
-        self.start_get(path, api_version)
-            .map(move |builder| builder.query(&query))
-            .then(request::fetch_json)
+        request::fetch_json(
+            self.request(Method::GET, path, api_version)
+                .await?
+                .query(&query),
+        )
+        .await
     }
 
     /// Issue a GET request with a query
@@ -409,38 +380,24 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// See `reqwest` crate documentation for how to define a query.
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get_query<I, Q>(
+    pub async fn get_query<I, Q>(
         &self,
         path: I,
         query: Q,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = Response, Error = Error> + Send
+    ) -> Result<Response, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         Q: Serialize + Send,
     {
-        self.start_get(path, api_version)
-            .map(move |builder| builder.query(&query))
-            .then(request::send_checked)
-    }
-
-    /// Start a POST request.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub fn start_post<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-    {
-        self.request(Method::POST, path, api_version)
+        request::send_checked(
+            self.request(Method::GET, path, api_version)
+                .await?
+                .query(&query),
+        )
+        .await
     }
 
     /// POST a JSON object.
@@ -449,21 +406,24 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn post<I, T>(
+    pub async fn post<I, T>(
         &self,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = Response, Error = Error> + Send
+    ) -> Result<Response, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        self.start_post(path, api_version)
-            .map(move |builder| builder.json(&body))
-            .then(request::send_checked)
+        request::send_checked(
+            self.request(Method::POST, path, api_version)
+                .await?
+                .json(&body),
+        )
+        .await
     }
 
     /// POST a JSON object and receive a JSON back.
@@ -472,12 +432,12 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn post_json<I, T, R>(
+    pub async fn post_json<I, T, R>(
         &self,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = R, Error = Error> + Send
+    ) -> Result<R, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -485,26 +445,12 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
-        self.start_post(path, api_version)
-            .map(move |builder| builder.json(&body))
-            .then(request::fetch_json)
-    }
-
-    /// Start a PUT request.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub fn start_put<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-    {
-        self.request(Method::PUT, path, api_version)
+        request::fetch_json(
+            self.request(Method::POST, path, api_version)
+                .await?
+                .json(&body),
+        )
+        .await
     }
 
     /// PUT a JSON object.
@@ -513,39 +459,41 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn put<I, T>(
+    pub async fn put<I, T>(
         &self,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = Response, Error = Error> + Send
+    ) -> Result<Response, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        self.start_put(path, api_version)
-            .map(move |builder| builder.json(&body))
-            .then(request::send_checked)
+        request::send_checked(
+            self.request(Method::PUT, path, api_version)
+                .await?
+                .json(&body),
+        )
+        .await
     }
 
     /// Issue an empty PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn put_empty<I>(
+    pub async fn put_empty<I>(
         &self,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = Response, Error = Error> + Send
+    ) -> Result<Response, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.start_put(path, api_version)
-            .then(request::send_checked)
+        request::send_checked(self.request(Method::PUT, path, api_version).await?).await
     }
 
     /// PUT a JSON object and receive a JSON back.
@@ -554,12 +502,12 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn put_json<I, T, R>(
+    pub async fn put_json<I, T, R>(
         &self,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = R, Error = Error> + Send
+    ) -> Result<R, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -567,43 +515,28 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
-        self.start_put(path, api_version)
-            .map(move |builder| builder.json(&body))
-            .then(request::fetch_json)
-    }
-
-    /// Start a DELETE request.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub fn start_delete<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = RequestBuilder, Error = Error> + Send
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-    {
-        self.request(Method::DELETE, path, api_version)
+        request::fetch_json(
+            self.request(Method::PUT, path, api_version)
+                .await?
+                .json(&body),
+        )
+        .await
     }
 
     /// Issue a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn delete<I>(
+    pub async fn delete<I>(
         &self,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> impl Future<Item = Response, Error = Error> + Send
+    ) -> Result<Response, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.start_delete(path, api_version)
-            .then(request::send_checked)
+        request::send_checked(self.request(Method::DELETE, path, api_version).await?).await
     }
 }
