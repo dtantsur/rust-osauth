@@ -15,15 +15,18 @@ edition = "2018"
 
 [features]
 
-default = ["native-tls"]
+default = ["native-tls", "stream"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls-tls"]
+stream = ["async-stream", "futures"]
 
 [dependencies]
 
+async-stream = { version = "^0.2", optional = true }
 async-trait = "^0.1"
 chrono = { version = "^0.4", features = ["serde"] }
 dirs = "^2.0"
+futures = { version = "^0.3", optional = true }
 log = "^0.4"
 osproto = "^0.2.0"
 reqwest = { version = "^0.10", default-features = false, features = ["gzip", "json", "stream"] }

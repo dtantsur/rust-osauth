@@ -16,6 +16,8 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "stream")]
+use futures::Stream;
 use log::{debug, trace};
 use reqwest::header::HeaderMap;
 use reqwest::{Method, RequestBuilder, Response, Url};
@@ -26,6 +28,8 @@ use super::cache;
 use super::protocol::ServiceInfo;
 use super::request;
 use super::services::ServiceType;
+#[cfg(feature = "stream")]
+use super::stream::{paginated, Resource};
 use super::url;
 use super::{Adapter, ApiVersion, AuthType, Error};
 
@@ -422,6 +426,87 @@ impl Session {
         .await
     }
 
+    /// Fetch a paginated list of JSON objects using the GET request.
+    ///
+    /// ```rust,no_run
+    /// # async fn example() -> Result<(), osauth::Error> {
+    /// use futures::pin_mut;
+    /// use futures::stream::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct Server {
+    ///     pub id: String,
+    ///     pub name: String,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct ServersRoot {
+    ///     pub servers: Vec<Server>,
+    /// }
+    ///
+    /// // This implementatin defines the relationship between the root resource and its items.
+    /// impl osauth::stream::Resource for Server {
+    ///     type Id = String;
+    ///     type Root = ServersRoot;
+    ///     fn resource_id(&self) -> Self::Id {
+    ///         self.id.clone()
+    ///     }
+    /// }
+    ///
+    /// // This is another required part of the pagination contract.
+    /// impl From<ServersRoot> for Vec<Server> {
+    ///     fn from(value: ServersRoot) -> Vec<Server> {
+    ///         value.servers
+    ///     }
+    /// }
+    ///
+    /// let session =
+    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    ///
+    /// let servers = session
+    ///     .get_json_paginated::<_, _, Server>(
+    ///         osauth::services::COMPUTE,
+    ///         &["servers"],
+    ///         None,
+    ///         None,
+    ///         None
+    ///     )
+    ///     .await?;
+    ///
+    /// pin_mut!(servers);
+    /// while let Some(srv) = servers.try_next().await? {
+    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
+    /// }
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
+    /// ```
+    ///
+    /// See [request](#method.request) for an explanation of the parameters.
+    #[cfg(feature = "stream")]
+    pub async fn get_json_paginated<Srv, I, T>(
+        &self,
+        service: Srv,
+        path: I,
+        api_version: Option<ApiVersion>,
+        limit: Option<usize>,
+        starting_with: Option<<T as Resource>::Id>,
+    ) -> Result<impl Stream<Item = Result<T, Error>>, Error>
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        T: Resource + Unpin,
+        <T as Resource>::Root: Into<Vec<T>> + Send,
+    {
+        let builder = self
+            .request(service, Method::GET, path, api_version)
+            .await?;
+        Ok(paginated(builder, limit, starting_with))
+    }
+
     /// Fetch a JSON using the GET request with a query.
     ///
     /// See `reqwest` crate documentation for how to define a query.
@@ -448,6 +533,36 @@ impl Session {
                 .query(&query),
         )
         .await
+    }
+
+    /// Fetch a paginated list of JSON objects using the GET request with a query.
+    ///
+    /// See `reqwest` crate documentation for how to define a query.
+    /// See [request](#method.request) for an explanation of the parameters.
+    #[cfg(feature = "stream")]
+    pub async fn get_json_query_paginated<Srv, I, Q, T>(
+        &self,
+        service: Srv,
+        path: I,
+        query: Q,
+        api_version: Option<ApiVersion>,
+        limit: Option<usize>,
+        starting_with: Option<<T as Resource>::Id>,
+    ) -> Result<impl Stream<Item = Result<T, Error>>, Error>
+    where
+        Srv: ServiceType + Send + Clone,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+        Q: Serialize + Send,
+        T: Resource + Unpin,
+        <T as Resource>::Root: Into<Vec<T>> + Send,
+    {
+        let builder = self
+            .request(service, Method::GET, path, api_version)
+            .await?
+            .query(&query);
+        Ok(paginated(builder, limit, starting_with))
     }
 
     /// Issue a GET request with a query

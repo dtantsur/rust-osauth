@@ -102,6 +102,8 @@ mod protocol;
 pub mod request;
 pub mod services;
 mod session;
+#[cfg(feature = "stream")]
+pub mod stream;
 mod url;
 
 pub use crate::adapter::Adapter;
