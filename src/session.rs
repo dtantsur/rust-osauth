@@ -1,4 +1,4 @@
-// Copyright 2019 Dmitry Tantsur <divius.inside@gmail.com>
+// Copyright 2019-2020 Dmitry Tantsur <divius.inside@gmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
 
 //! Session structure definition.
 
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(feature = "stream")]
@@ -23,8 +25,8 @@ use reqwest::header::HeaderMap;
 use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tokio::sync::RwLock;
 
-use super::cache;
 use super::protocol::ServiceInfo;
 use super::request;
 use super::services::ServiceType;
@@ -33,7 +35,7 @@ use super::stream::{paginated, Resource};
 use super::url;
 use super::{Adapter, ApiVersion, AuthType, Error};
 
-type Cache = cache::MapCache<&'static str, ServiceInfo>;
+type Cache = HashMap<&'static str, ServiceInfo>;
 
 /// An OpenStack API session.
 ///
@@ -47,7 +49,7 @@ type Cache = cache::MapCache<&'static str, ServiceInfo>;
 #[derive(Debug, Clone)]
 pub struct Session {
     auth: Arc<dyn AuthType>,
-    cached_info: Arc<Cache>,
+    cached_info: Arc<RwLock<Cache>>,
     endpoint_interface: Option<String>,
 }
 
@@ -59,7 +61,7 @@ impl Session {
     pub fn new<Auth: AuthType + 'static>(auth_type: Auth) -> Session {
         Session {
             auth: Arc::new(auth_type),
-            cached_info: Arc::new(cache::MapCache::default()),
+            cached_info: Arc::new(RwLock::new(HashMap::new())),
             endpoint_interface: None,
         }
     }
@@ -127,7 +129,7 @@ impl Session {
     /// Reset the internal cache.
     #[inline]
     fn reset_cache(&mut self) {
-        self.cached_info = Arc::new(cache::MapCache::default());
+        self.cached_info = Arc::new(RwLock::new(HashMap::new()));
     }
 
     /// Set a new authentication for this `Session`.
@@ -338,7 +340,6 @@ impl Session {
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        let auth = Arc::clone(&self.auth);
         let url = self.get_endpoint(service.clone(), path).await?;
         trace!(
             "Sending HTTP {} request to {} with API version {:?}",
@@ -346,7 +347,7 @@ impl Session {
             url,
             api_version
         );
-        let mut builder = auth.request(method, url).await?;
+        let mut builder = self.auth.request(method, url).await?;
         if let Some(version) = api_version {
             let mut headers = HeaderMap::new();
             service.set_api_version_headers(&mut headers, version)?;
@@ -760,26 +761,28 @@ impl Session {
         T: Send,
     {
         let catalog_type = service.catalog_type();
-        Ok(if self.cached_info.is_set(&catalog_type) {
-            self.cached_info
-                .extract(&catalog_type, filter)
-                .expect("BUG: cached record removed while in extract_service_info")
-        } else {
-            debug!(
-                "No cached information for service {}, fetching",
-                catalog_type
-            );
+        if let Some(info) = self.cached_info.read().await.get(catalog_type) {
+            return Ok(filter(info));
+        }
 
-            let endpoint_interface = self.endpoint_interface.clone();
-            let cached_info = Arc::clone(&self.cached_info);
-            let auth_type = Arc::clone(&self.auth);
+        debug!(
+            "No cached information for service {}, fetching",
+            catalog_type
+        );
+
+        let mut lock = self.cached_info.write().await;
+        // Additonal check in case another thread has updated the token while we were waiting for
+        // the write lock.
+        Ok(if let Some(info) = lock.get(catalog_type) {
+            filter(info)
+        } else {
             let ep = self
                 .auth
-                .get_endpoint(catalog_type.to_string(), endpoint_interface)
+                .get_endpoint(catalog_type.to_string(), self.endpoint_interface.clone())
                 .await?;
-            let info = ServiceInfo::fetch(service, ep, auth_type).await?;
+            let info = ServiceInfo::fetch(service, ep, self.auth.deref()).await?;
             let value = filter(&info);
-            cached_info.set(catalog_type, info);
+            let _ = lock.insert(catalog_type, info);
             value
         })
     }
@@ -790,7 +793,9 @@ impl Session {
         service_type: &'static str,
         service_info: ServiceInfo,
     ) {
-        let _ = self.cached_info.set(service_type, service_info);
+        let mut hm = HashMap::new();
+        let _ = hm.insert(service_type, service_info);
+        self.cached_info = Arc::new(RwLock::new(hm));
     }
 }
 

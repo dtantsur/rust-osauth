@@ -1,4 +1,4 @@
-// Copyright 2019 Dmitry Tantsur <divius.inside@gmail.com>
+// Copyright 2019-2020 Dmitry Tantsur <divius.inside@gmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,15 +20,15 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::ops::Deref;
 
 use async_trait::async_trait;
 use chrono::{Duration, Local};
 use log::{debug, error, trace};
 use osproto::identity as protocol;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, Response, Url};
+use tokio::sync::RwLock;
 
-use super::cache::ValueCache;
 use super::{catalog, request, AuthType, Error, ErrorKind};
 
 pub use osproto::identity::IdOrName;
@@ -154,15 +154,30 @@ pub trait Identity {
 ///
 /// The authentication token is cached while it's still valid or until
 /// [refresh](../trait.AuthType.html#tymethod.refresh) is called.
-#[derive(Clone, Debug)]
+/// Clones of a `Password` also start with an empty cache.
+#[derive(Debug)]
 pub struct Password {
     client: Client,
     auth_url: Url,
     body: protocol::AuthRoot,
     token_endpoint: String,
     region: Option<String>,
-    cached_token: Arc<ValueCache<Token>>,
+    cached_token: RwLock<Option<Token>>,
     endpoint_interface: String,
+}
+
+impl Clone for Password {
+    fn clone(&self) -> Password {
+        Password {
+            client: self.client.clone(),
+            auth_url: self.auth_url.clone(),
+            body: self.body.clone(),
+            token_endpoint: self.token_endpoint.clone(),
+            region: self.region.clone(),
+            cached_token: RwLock::new(None),
+            endpoint_interface: self.endpoint_interface.clone(),
+        }
+    }
 }
 
 impl Identity for Password {
@@ -232,7 +247,7 @@ impl Password {
             region: None,
             body,
             token_endpoint,
-            cached_token: Arc::new(ValueCache::default()),
+            cached_token: RwLock::new(None),
             endpoint_interface: "public".to_string(),
         })
     }
@@ -322,17 +337,28 @@ impl Password {
     }
 
     async fn do_refresh(&self, force: bool) -> Result<(), Error> {
-        if force || !self.cached_token.validate(token_alive) {
-            let cached_token = Arc::clone(&self.cached_token);
-            let resp = self
-                .client
-                .post(&self.token_endpoint)
-                .json(&self.body)
-                .send()
-                .await?;
-            let token = token_from_response(request::check(resp).await?).await?;
-            cached_token.set(token);
+        // This is executed every request at least once, so it's important to start with a read
+        // lock. We expect to hit this branch most of the time.
+        if !force {
+            if token_alive(&self.cached_token.read().await) {
+                return Ok(());
+            }
         }
+
+        let mut lock = self.cached_token.write().await;
+        // Additonal check in case another thread has updated the token while we were waiting for
+        // the write lock.
+        if token_alive(&lock) {
+            return Ok(());
+        }
+
+        let resp = self
+            .client
+            .post(&self.token_endpoint)
+            .json(&self.body)
+            .send()
+            .await?;
+        *lock = Some(token_from_response(request::check(resp).await?).await?);
         Ok(())
     }
 
@@ -367,17 +393,28 @@ impl Password {
 
     #[inline]
     async fn get_token(&self) -> Result<String, Error> {
-        let cached_token = Arc::clone(&self.cached_token);
         self.do_refresh(false).await?;
-        Ok(cached_token.extract(|t| t.value.clone()).unwrap())
+        // unwrap is safe because do_refresh unconditionally populates the token
+        Ok(self
+            .cached_token
+            .read()
+            .await
+            .as_ref()
+            .unwrap()
+            .value
+            .clone())
     }
 }
 
 #[inline]
-fn token_alive(value: &Token) -> bool {
-    let validity_time_left = value.body.expires_at.signed_duration_since(Local::now());
-    trace!("Token is valid for {:?}", validity_time_left);
-    validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
+fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
+    if let Some(value) = token.deref() {
+        let validity_time_left = value.body.expires_at.signed_duration_since(Local::now());
+        trace!("Token is valid for {:?}", validity_time_left);
+        validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
+    } else {
+        false
+    }
 }
 
 #[async_trait]
@@ -402,7 +439,6 @@ impl AuthType for Password {
         service_type: String,
         endpoint_interface: Option<String>,
     ) -> Result<Url, Error> {
-        let cached_token = Arc::clone(&self.cached_token);
         let real_interface = endpoint_interface.unwrap_or_else(|| self.endpoint_interface.clone());
         let region = self.region.clone();
         debug!(
@@ -411,11 +447,14 @@ impl AuthType for Password {
             service_type, real_interface, self.region
         );
         self.do_refresh(false).await?;
-        cached_token
-            .extract(|t| {
-                catalog::extract_url(&t.body.catalog, &service_type, &real_interface, &region)
-            })
-            .expect("Token is not populated after refreshing")
+        let lock = self.cached_token.read().await;
+        // unwrap is safe because do_refresh unconditionally populates the token
+        catalog::extract_url(
+            &lock.as_ref().unwrap().body.catalog,
+            &service_type,
+            &real_interface,
+            &region,
+        )
     }
 
     /// Refresh the cached token and service catalog.

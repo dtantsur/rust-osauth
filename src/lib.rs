@@ -93,7 +93,6 @@
 mod adapter;
 mod apiversion;
 mod auth;
-mod cache;
 mod catalog;
 mod config;
 mod error;

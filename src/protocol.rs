@@ -15,7 +15,6 @@
 //! JSON structures and protocol bits for the Identity V3 API.
 
 use std::convert::TryFrom;
-use std::sync::Arc;
 
 use log::{debug, trace, warn};
 use osproto::common::{Root, Version};
@@ -66,7 +65,7 @@ impl TryFrom<Version> for ServiceInfo {
 async fn fetch_root(
     catalog_type: &'static str,
     endpoint: Url,
-    auth: Arc<dyn AuthType>,
+    auth: &dyn AuthType,
 ) -> Result<Root, Error> {
     debug!("Fetching {} service info from {}", catalog_type, endpoint);
     request::fetch_json(auth.request(Method::GET, endpoint).await?).await
@@ -124,7 +123,7 @@ impl ServiceInfo {
     pub async fn fetch<Srv: ServiceType>(
         service: Srv,
         endpoint: Url,
-        auth: Arc<dyn AuthType>,
+        auth: &dyn AuthType,
     ) -> Result<ServiceInfo, Error> {
         let fallback = ServiceInfo {
             root_url: endpoint.clone(),
