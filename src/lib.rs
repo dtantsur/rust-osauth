@@ -103,6 +103,8 @@ pub mod services;
 mod session;
 #[cfg(feature = "stream")]
 pub mod stream;
+#[cfg(feature = "sync")]
+pub mod sync;
 mod url;
 
 pub use crate::adapter::Adapter;
