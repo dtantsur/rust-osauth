@@ -41,6 +41,20 @@ const INVALID_SUBJECT_HEADER: &str = "Invalid X-Subject-Token header";
 // in 10 minutes or less.
 const TOKEN_MIN_VALIDITY: i64 = 10;
 
+/// A scope of a token.
+///
+/// Only project scopes are currently supported.
+#[derive(Debug)]
+pub enum Scope {
+    /// A token scoped to a project.
+    Project {
+        /// Project ID or name.
+        project: IdOrName,
+        /// ID or name of the project domain.
+        domain: Option<IdOrName>,
+    },
+}
+
 /// Plain authentication token without additional details.
 #[derive(Clone)]
 struct Token {
@@ -99,7 +113,12 @@ pub trait Identity {
 /// If your cloud has several regions, pick one using [with_region](#method.with_region):
 ///
 /// ```rust,no_run
-/// # use osauth::identity::IdOrName;
+/// use osauth::identity::IdOrName;
+///
+/// let scope = osauth::identity::Scope::Project {
+///     project: IdOrName::Name("project1".to_string()),
+///     domain: Some(IdOrName::Id("default".to_string())),
+/// };
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -107,18 +126,23 @@ pub trait Identity {
 ///     "Default"
 /// )
 /// .expect("Invalid auth_url")
-/// .with_project_scope(IdOrName::Name("project1".to_string()), None)
+/// .with_scope(scope)
 /// .with_region("US-East");
 ///
 /// let session = osauth::Session::new(auth);
 /// ```
 ///
-/// By default, the `public` endpoint interface is used. If you would prefer to default to another
+/// By default, the `public` endpoint interface is used. f you would prefer to default to another
 /// one, you can set it with
 /// [with_default_endpoint_interface](#method.with_default_endpoint_interface).
 ///
 /// ```rust,no_run
-/// # use osauth::identity::IdOrName;
+/// use osauth::identity::IdOrName;
+///
+/// let scope = osauth::identity::Scope::Project {
+///     project: IdOrName::Name("project1".to_string()),
+///     domain: Some(IdOrName::Id("default".to_string())),
+/// };
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -126,7 +150,7 @@ pub trait Identity {
 ///     "Default"
 /// )
 /// .expect("Invalid auth_url")
-/// .with_project_scope(IdOrName::Name("project1".to_string()), None)
+/// .with_scope(scope)
 /// .with_default_endpoint_interface("internal");
 /// ```
 ///
@@ -239,12 +263,24 @@ impl Password {
 
     /// Scope authentication to the given project.
     ///
-    /// This is required in the most cases.
+    /// A convenience wrapper around `set_scope`.
+    #[inline]
     pub fn set_project_scope(&mut self, project: IdOrName, domain: impl Into<Option<IdOrName>>) {
-        self.body.auth.scope = Some(protocol::Scope::Project(protocol::Project {
+        self.set_scope(Scope::Project {
             project,
             domain: domain.into(),
-        }));
+        });
+    }
+
+    /// Add a scope to the authentication.
+    ///
+    /// This is required in the most cases.
+    pub fn set_scope(&mut self, scope: Scope) {
+        self.body.auth.scope = Some(match scope {
+            Scope::Project { project, domain } => {
+                protocol::Scope::Project(protocol::Project { project, domain })
+            }
+        });
     }
 
     /// Convert this session into one using the given endpoint interface.
@@ -258,6 +294,8 @@ impl Password {
     }
 
     /// Scope authentication to the given project.
+    ///
+    /// A convenience wrapper around `with_scope`.
     #[inline]
     pub fn with_project_scope(
         mut self,
@@ -275,6 +313,13 @@ impl Password {
         S: Into<String>,
     {
         self.set_region(region);
+        self
+    }
+
+    /// Add a scope to the authentication.
+    #[inline]
+    pub fn with_scope(mut self, scope: Scope) -> Self {
+        self.set_scope(scope);
         self
     }
 

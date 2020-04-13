@@ -24,7 +24,7 @@ use log::warn;
 use serde::Deserialize;
 use serde_yaml;
 
-use super::identity::Password;
+use super::identity::{Password, Scope};
 use super::{Error, ErrorKind, Session};
 
 use crate::identity::IdOrName;
@@ -122,7 +122,11 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         .unwrap_or_else(|| String::from("Default"));
     let mut id = Password::new(&auth.auth_url, auth.username, auth.password, user_domain)?;
     if let Some(project_name) = auth.project_name {
-        id.set_project_scope(IdOrName::Name(project_name), IdOrName::Name(project_domain));
+        let scope = Scope::Project {
+            project: IdOrName::Name(project_name),
+            domain: Some(IdOrName::Name(project_domain)),
+        };
+        id.set_scope(scope);
     }
     if let Some(region) = cloud.region_name {
         id.set_region(region)
