@@ -362,17 +362,6 @@ impl Password {
         Ok(())
     }
 
-    /// User name.
-    #[inline]
-    #[deprecated(since = "0.2.3", note = "Use user in preparation for user ID support.")]
-    pub fn user_name(&self) -> &String {
-        match *self.user() {
-            protocol::IdOrName::Name(ref user) => user,
-            // NOTE(dtantsur): change to panic when we support user IDs.
-            _ => unreachable!(),
-        }
-    }
-
     /// User name or ID.
     #[inline]
     pub fn user(&self) -> &IdOrName {
