@@ -35,7 +35,7 @@ use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 
 use super::request;
 use super::services::ServiceType;
-use super::{ApiVersion, AuthType, Error, Session};
+use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
 /// A result of an OpenStack operation.
 pub type Result<T> = result::Result<T, Error>;
@@ -111,8 +111,17 @@ impl SyncSession {
 
     /// Endpoint interface in use (if any).
     #[inline]
-    pub fn endpoint_interface(&self) -> &Option<String> {
-        &self.inner.endpoint_interface()
+    pub fn endpoint_filters(&self) -> &EndpointFilters {
+        self.inner.endpoint_filters()
+    }
+
+    /// Modify endpoint filters.
+    ///
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
+    #[inline]
+    pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
+        self.inner.endpoint_filters_mut()
     }
 
     /// Refresh the session.
@@ -137,15 +146,11 @@ impl SyncSession {
         self.inner.set_auth_type(auth_type);
     }
 
-    /// Set endpoint interface to use.
+    /// A convenience call to set an endpoint interface.
     ///
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
-    #[inline]
-    pub fn set_endpoint_interface<S>(&mut self, endpoint_interface: S)
-    where
-        S: Into<String>,
-    {
+    pub fn set_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
         self.inner.set_endpoint_interface(endpoint_interface);
     }
 
@@ -156,12 +161,16 @@ impl SyncSession {
         self
     }
 
-    /// Convert this session into one using the given endpoint interface.
+    /// Convert this session into one using the given endpoint filters.
     #[inline]
-    pub fn with_endpoint_interface<S>(mut self, endpoint_interface: S) -> SyncSession
-    where
-        S: Into<String>,
-    {
+    pub fn with_endpoint_filters(mut self, endpoint_filters: EndpointFilters) -> SyncSession {
+        *self.endpoint_filters_mut() = endpoint_filters;
+        self
+    }
+
+    /// Convert this session into one using the given endpoint filters.
+    #[inline]
+    pub fn with_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> SyncSession {
         self.set_endpoint_interface(endpoint_interface);
         self
     }

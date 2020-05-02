@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use dirs;
 use log::warn;
@@ -25,7 +26,7 @@ use serde::Deserialize;
 use serde_yaml;
 
 use super::identity::{Password, Scope};
-use super::{Error, ErrorKind, Session};
+use super::{EndpointFilters, Error, ErrorKind, InterfaceType, Session};
 
 use crate::identity::IdOrName;
 
@@ -129,7 +130,7 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         id.set_scope(scope);
     }
     if let Some(region) = cloud.region_name {
-        id.set_region(region)
+        id.endpoint_filters_mut().region = Some(region);
     }
 
     Ok(Session::new(id))
@@ -165,10 +166,12 @@ pub fn from_env() -> Result<Session, Error> {
             .ok();
 
         let mut session = Session::new(id.with_project_scope(project, project_domain));
+        let mut filters = EndpointFilters::default();
 
         if let Ok(interface) = env::var("OS_INTERFACE") {
-            session.set_endpoint_interface(interface)
+            filters.set_interfaces(InterfaceType::from_str(&interface)?);
         }
+        *session.endpoint_filters_mut() = filters;
 
         Ok(session)
     }

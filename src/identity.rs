@@ -29,7 +29,7 @@ use osproto::identity as protocol;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, Response, Url};
 use tokio::sync::RwLock;
 
-use super::{catalog, request, AuthType, Error, ErrorKind};
+use super::{request, AuthType, EndpointFilters, Error, ErrorKind, InterfaceType, ValidInterfaces};
 
 pub use osproto::identity::IdOrName;
 
@@ -149,7 +149,7 @@ pub trait Identity {
 /// )
 /// .expect("Invalid auth_url")
 /// .with_scope(scope)
-/// .with_default_endpoint_interface("internal");
+/// .with_default_endpoint_interface(osauth::InterfaceType::Internal);
 /// ```
 ///
 /// The authentication token is cached while it's still valid or until
@@ -161,9 +161,8 @@ pub struct Password {
     auth_url: Url,
     body: protocol::AuthRoot,
     token_endpoint: String,
-    region: Option<String>,
     cached_token: RwLock<Option<Token>>,
-    endpoint_interface: String,
+    filters: EndpointFilters,
 }
 
 impl Clone for Password {
@@ -173,9 +172,8 @@ impl Clone for Password {
             auth_url: self.auth_url.clone(),
             body: self.body.clone(),
             token_endpoint: self.token_endpoint.clone(),
-            region: self.region.clone(),
             cached_token: RwLock::new(None),
-            endpoint_interface: self.endpoint_interface.clone(),
+            filters: self.filters.clone(),
         }
     }
 }
@@ -244,34 +242,43 @@ impl Password {
         Ok(Password {
             client,
             auth_url: url,
-            region: None,
             body,
             token_endpoint,
             cached_token: RwLock::new(None),
-            endpoint_interface: "public".to_string(),
+            filters: EndpointFilters::default(),
         })
     }
 
-    /// The default endpoint interface.
+    /// Endpoint filters.
     #[inline]
-    pub fn default_endpoint_interface(&self) -> &String {
-        &self.endpoint_interface
+    pub fn endpoint_filters(&self) -> &EndpointFilters {
+        &self.filters
+    }
+
+    /// Mutable endpoint filters.
+    #[inline]
+    pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
+        &mut self.filters
     }
 
     /// Set the default endpoint interface to use.
-    pub fn set_default_endpoint_interface<S>(&mut self, endpoint_interface: S)
-    where
-        S: Into<String>,
-    {
-        self.endpoint_interface = endpoint_interface.into();
+    pub fn set_default_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
+        self.filters.interfaces = ValidInterfaces::one(endpoint_interface);
+    }
+
+    /// Set endpoint filters.
+    #[inline]
+    pub fn set_endpoint_filters(&mut self, filters: EndpointFilters) {
+        self.filters = filters;
     }
 
     /// Set a region for this authentication method.
+    #[deprecated(since = "0.3.0", note = "Use set_filters or filters_mut")]
     pub fn set_region<S>(&mut self, region: S)
     where
         S: Into<String>,
     {
-        self.region = Some(region.into());
+        self.filters.region = Some(region.into());
     }
 
     /// Scope authentication to the given project.
@@ -296,13 +303,17 @@ impl Password {
         });
     }
 
-    /// Convert this session into one using the given endpoint interface.
+    /// Convert this authentication into one using the given endpoint interface.
     #[inline]
-    pub fn with_default_endpoint_interface<S>(mut self, endpoint_interface: S) -> Self
-    where
-        S: Into<String>,
-    {
+    pub fn with_default_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> Self {
         self.set_default_endpoint_interface(endpoint_interface);
+        self
+    }
+
+    /// Add endpoint filters.
+    #[inline]
+    pub fn with_endpoint_filters(mut self, filters: EndpointFilters) -> Self {
+        self.filters = filters;
         self
     }
 
@@ -325,7 +336,7 @@ impl Password {
     where
         S: Into<String>,
     {
-        self.set_region(region);
+        self.filters.region = Some(region.into());
         self
     }
 
@@ -408,9 +419,9 @@ fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
 
 #[async_trait]
 impl AuthType for Password {
-    /// Get region.
-    fn region(&self) -> Option<String> {
-        self.region.clone()
+    /// Endpoint filters in use.
+    fn default_filters(&self) -> Option<&EndpointFilters> {
+        Some(&self.filters)
     }
 
     /// Create an authenticated request.
@@ -426,24 +437,17 @@ impl AuthType for Password {
     async fn get_endpoint(
         &self,
         service_type: String,
-        endpoint_interface: Option<String>,
+        filters: EndpointFilters,
     ) -> Result<Url, Error> {
-        let real_interface = endpoint_interface.unwrap_or_else(|| self.endpoint_interface.clone());
-        let region = self.region.clone();
+        let real_filters = filters.with_defaults(&self.filters);
         debug!(
-            "Requesting a catalog endpoint for service '{}', interface \
-             '{}' from region {:?}",
-            service_type, real_interface, self.region
+            "Requesting a catalog endpoint for service '{}', filters {:?}",
+            service_type, real_filters
         );
         self.do_refresh(false).await?;
         let lock = self.cached_token.read().await;
         // unwrap is safe because do_refresh unconditionally populates the token
-        catalog::extract_url(
-            &lock.as_ref().unwrap().body.catalog,
-            &service_type,
-            &real_interface,
-            &region,
-        )
+        real_filters.find_in_catalog(&lock.as_ref().unwrap().body.catalog, &service_type)
     }
 
     /// Refresh the cached token and service catalog.
@@ -491,7 +495,6 @@ async fn token_from_response(resp: Response) -> Result<Token, Error> {
 pub mod test {
     #![allow(unused_results)]
 
-    use super::super::AuthType;
     use super::{IdOrName, Identity, Password};
 
     #[test]
@@ -535,6 +538,6 @@ pub mod test {
             &id.token_endpoint,
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
-        assert_eq!(id.region(), None);
+        assert_eq!(id.endpoint_filters().region, None);
     }
 }

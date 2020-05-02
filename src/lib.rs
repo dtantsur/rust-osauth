@@ -93,8 +93,8 @@
 mod adapter;
 mod apiversion;
 mod auth;
-mod catalog;
 mod config;
+mod endpointfilters;
 mod error;
 pub mod identity;
 mod protocol;
@@ -111,5 +111,6 @@ pub use crate::adapter::Adapter;
 pub use crate::apiversion::ApiVersion;
 pub use crate::auth::{AuthType, NoAuth};
 pub use crate::config::{from_config, from_env};
+pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces};
 pub use crate::error::{Error, ErrorKind};
 pub use crate::session::Session;

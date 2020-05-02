@@ -33,7 +33,7 @@ use super::services::ServiceType;
 #[cfg(feature = "stream")]
 use super::stream::{paginated, Resource};
 use super::url;
-use super::{Adapter, ApiVersion, AuthType, Error};
+use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
 
 type Cache = HashMap<&'static str, ServiceInfo>;
 
@@ -50,19 +50,18 @@ type Cache = HashMap<&'static str, ServiceInfo>;
 pub struct Session {
     auth: Arc<dyn AuthType>,
     cached_info: Arc<RwLock<Cache>>,
-    endpoint_interface: Option<String>,
+    endpoint_filters: EndpointFilters,
 }
 
 impl Session {
     /// Create a new session with a given authentication plugin.
     ///
-    /// The resulting session will use the default endpoint interface (usually,
-    /// public).
+    /// The resulting session will use the default endpoint interface (usually, public).
     pub fn new<Auth: AuthType + 'static>(auth_type: Auth) -> Session {
         Session {
             auth: Arc::new(auth_type),
             cached_info: Arc::new(RwLock::new(HashMap::new())),
-            endpoint_interface: None,
+            endpoint_filters: EndpointFilters::default(),
         }
     }
 
@@ -108,10 +107,19 @@ impl Session {
         self.auth.as_ref()
     }
 
-    /// Endpoint interface in use (if any).
+    /// Endpoint filters in use.
     #[inline]
-    pub fn endpoint_interface(&self) -> &Option<String> {
-        &self.endpoint_interface
+    pub fn endpoint_filters(&self) -> &EndpointFilters {
+        &self.endpoint_filters
+    }
+
+    /// Modify endpoint filters.
+    ///
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
+    pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
+        self.reset_cache();
+        &mut self.endpoint_filters
     }
 
     /// Update the authentication and purges cached endpoint information.
@@ -142,16 +150,13 @@ impl Session {
         self.auth = Arc::new(auth_type);
     }
 
-    /// Set endpoint interface to use.
+    /// A convenience call to set an endpoint interface.
     ///
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
-    pub fn set_endpoint_interface<S>(&mut self, endpoint_interface: S)
-    where
-        S: Into<String>,
-    {
+    pub fn set_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
         self.reset_cache();
-        self.endpoint_interface = Some(endpoint_interface.into());
+        self.endpoint_filters.set_interfaces(endpoint_interface);
     }
 
     /// Convert this session into one using the given authentication.
@@ -161,12 +166,16 @@ impl Session {
         self
     }
 
-    /// Convert this session into one using the given endpoint interface.
+    /// Convert this session into one using the given endpoint filters.
     #[inline]
-    pub fn with_endpoint_interface<S>(mut self, endpoint_interface: S) -> Session
-    where
-        S: Into<String>,
-    {
+    pub fn with_endpoint_filters(mut self, endpoint_filters: EndpointFilters) -> Session {
+        *self.endpoint_filters_mut() = endpoint_filters;
+        self
+    }
+
+    /// Convert this session into one using the given endpoint filters.
+    #[inline]
+    pub fn with_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> Session {
         self.set_endpoint_interface(endpoint_interface);
         self
     }
@@ -778,7 +787,7 @@ impl Session {
         } else {
             let ep = self
                 .auth
-                .get_endpoint(catalog_type.to_string(), self.endpoint_interface.clone())
+                .get_endpoint(catalog_type.to_string(), self.endpoint_filters.clone())
                 .await?;
             let info = ServiceInfo::fetch(service, ep, self.auth.deref()).await?;
             let value = filter(&info);

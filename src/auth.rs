@@ -19,7 +19,7 @@ use std::fmt::Debug;
 use async_trait::async_trait;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 
-use super::Error;
+use super::{EndpointFilters, Error};
 
 /// Trait for an authentication type.
 ///
@@ -35,7 +35,7 @@ pub trait AuthType: Debug + Sync + Send {
     async fn get_endpoint(
         &self,
         service_type: String,
-        endpoint_interface: Option<String>,
+        filters: EndpointFilters,
     ) -> Result<Url, Error>;
 
     /// Create an authenticated request.
@@ -44,8 +44,8 @@ pub trait AuthType: Debug + Sync + Send {
     /// Refresh the authentication (renew the token, etc).
     async fn refresh(&self) -> Result<(), Error>;
 
-    /// Region used with this authentication (if any).
-    fn region(&self) -> Option<String> {
+    /// Default endpoint filters (if any).
+    fn default_filters(&self) -> Option<&EndpointFilters> {
         None
     }
 }
@@ -91,7 +91,7 @@ impl AuthType for NoAuth {
     async fn get_endpoint(
         &self,
         _service_type: String,
-        _endpoint_interface: Option<String>,
+        _filters: EndpointFilters,
     ) -> Result<Url, Error> {
         Ok(self.endpoint.clone())
     }
@@ -124,7 +124,10 @@ pub mod test {
     #[tokio::test]
     async fn test_noauth_get_endpoint() {
         let a = NoAuth::new("http://127.0.0.1:8080/v1").unwrap();
-        let e = a.get_endpoint(String::from("foobar"), None).await.unwrap();
+        let e = a
+            .get_endpoint(String::from("foobar"), Default::default())
+            .await
+            .unwrap();
         assert_eq!(e.scheme(), "http");
         assert_eq!(e.host_str().unwrap(), "127.0.0.1");
         assert_eq!(e.port().unwrap(), 8080u16);

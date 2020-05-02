@@ -25,7 +25,7 @@ use super::request;
 use super::services::ServiceType;
 #[cfg(feature = "stream")]
 use super::stream::{paginated, Resource};
-use super::{ApiVersion, AuthType, Error, Session};
+use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
 /// Adapter for a specific service.
 ///
@@ -86,10 +86,19 @@ impl<Srv> Adapter<Srv> {
         self.default_api_version
     }
 
-    /// Endpoint interface in use (if any).
+    /// Endpoint filters in use.
     #[inline]
-    pub fn endpoint_interface(&self) -> &Option<String> {
-        self.inner.endpoint_interface()
+    pub fn endpoint_filters(&self) -> &EndpointFilters {
+        self.inner.endpoint_filters()
+    }
+
+    /// Modify endpoint filters.
+    ///
+    /// This call clears the cached service information for this `Adapter`.
+    /// It does not, however, affect clones of this `Adapter`.
+    #[inline]
+    pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
+        self.inner.endpoint_filters_mut()
     }
 
     /// Update the authentication and purges cached endpoint information.
@@ -127,14 +136,12 @@ impl<Srv> Adapter<Srv> {
         self.default_api_version = api_version;
     }
 
-    /// Set endpoint interface to use.
+    /// A convenience call to set an endpoint interface.
     ///
     /// This call clears the cached service information for this `Adapter`.
     /// It does not, however, affect clones of this `Adapter`.
-    pub fn set_endpoint_interface<S>(&mut self, endpoint_interface: S)
-    where
-        S: Into<String>,
-    {
+    #[inline]
+    pub fn set_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
         self.inner.set_endpoint_interface(endpoint_interface);
     }
 
@@ -152,12 +159,16 @@ impl<Srv> Adapter<Srv> {
         self
     }
 
-    /// Convert this adapter into one using the given endpoint interface.
+    /// Convert this adapter into one using the given endpoint filters.
     #[inline]
-    pub fn with_endpoint_interface<S>(mut self, endpoint_interface: S) -> Adapter<Srv>
-    where
-        S: Into<String>,
-    {
+    pub fn with_endpoint_filters(mut self, endpoint_filters: EndpointFilters) -> Adapter<Srv> {
+        *self.endpoint_filters_mut() = endpoint_filters;
+        self
+    }
+
+    /// Convert this adapter into one using the given endpoint filters.
+    #[inline]
+    pub fn with_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> Adapter<Srv> {
         self.set_endpoint_interface(endpoint_interface);
         self
     }
