@@ -53,6 +53,7 @@ pub trait ServiceType {
 
 /// A major version selector.
 #[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
 pub enum VersionSelector {
     /// Match the major component.
     Major(u16),
@@ -64,8 +65,6 @@ pub enum VersionSelector {
     Range(ApiVersion, ApiVersion),
     /// Any major version.
     Any,
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 // TODO(dtantsur): change $name to be a literal
@@ -73,14 +72,13 @@ macro_rules! service {
     ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:expr, discovery $disc:expr) => {
         $(#[$attr])*
         #[derive(Copy, Clone, Debug)]
-        pub struct $cls {
-            __use_new: (),
-        }
+        #[non_exhaustive]
+        pub struct $cls;
 
         impl $cls {
             /// Create a new service type.
             pub const fn new() -> $cls {
-                $cls { __use_new: () }
+                $cls
             }
         }
 
@@ -108,14 +106,13 @@ macro_rules! service {
     ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:expr, header $hdr:expr) => {
         $(#[$attr])*
         #[derive(Copy, Clone, Debug)]
-        pub struct $cls {
-            __use_new: (),
-        }
+        #[non_exhaustive]
+        pub struct $cls;
 
         impl $cls {
             /// Create a new service type.
             pub const fn new() -> $cls {
-                $cls { __use_new: () }
+                $cls
             }
         }
 
@@ -148,9 +145,8 @@ pub struct GenericService {
 
 /// Compute service.
 #[derive(Copy, Clone, Debug)]
-pub struct ComputeService {
-    __use_new: (),
-}
+#[non_exhaustive]
+pub struct ComputeService;
 
 service! {
     #[doc = "Bare Metal service."]
@@ -197,7 +193,7 @@ impl ServiceType for GenericService {
             VersionSelector::Major(ver) => version.0 == ver,
             VersionSelector::Exact(ver) => version == ver,
             VersionSelector::Range(v1, v2) => v1 <= version && version <= v2,
-            _ => true,
+            VersionSelector::Any => true,
         }
     }
 }
@@ -205,7 +201,7 @@ impl ServiceType for GenericService {
 impl ComputeService {
     /// Create a Compute service type.
     pub const fn new() -> ComputeService {
-        ComputeService { __use_new: () }
+        ComputeService
     }
 }
 

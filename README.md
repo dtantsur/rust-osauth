@@ -11,3 +11,5 @@ Version](https://img.shields.io/crates/v/osauth.svg)](https://crates.io/crates/o
 The goal of this project is to provide a asynchronous API for HTTP requests
 against OpenStack clouds. For a more high-level API see
 [rust-openstack](https://crates.io/crates/openstack).
+
+This project requires Rust compiler 1.40.0 or newer.

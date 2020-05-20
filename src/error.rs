@@ -21,6 +21,7 @@ use reqwest::StatusCode;
 
 /// Kind of an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// Authentication failure
     ///
@@ -75,9 +76,6 @@ pub enum ErrorKind {
 
     /// Invalid clouds.yaml file.
     InvalidConfig,
-
-    #[allow(missing_docs)]
-    __Nonexhaustive,
 }
 
 /// Error from an OpenStack call.
@@ -147,7 +145,6 @@ impl ErrorKind {
             ErrorKind::InvalidResponse => "Received invalid response",
             ErrorKind::InternalServerError => "Internal server error or bad gateway",
             ErrorKind::InvalidConfig => "clouds.yaml cannot be found or is invalid",
-            _ => unreachable!(),
         }
     }
 }
