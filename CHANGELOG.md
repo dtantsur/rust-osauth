@@ -1,5 +1,31 @@
 # Change Log
 
+## 0.3.0 (2020-05-21)
+
+#### Breaking Changes
+
+* The library now uses async/await instead of explicit futures.
+* A separate endpoint interface field is replaced by a new `EndpointFilters` structure everywhere.
+
+Other:
+
+*  remove deprecated user_name ([80125d0b](https://github.com/dtantsur/rust-osauth/commit/80125d0bbfa100e90f45f29c282c2b2203909d2e), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+*  enable project scope to take id or name (#10) ([c6b31f33](https://github.com/dtantsur/rust-osauth/commit/c6b31f3336bc25555423802f3c60aa054569c7c8), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+
+#### Features
+
+*   add paginated query support ([a8bfdee6](https://github.com/dtantsur/rust-osauth/commit/a8bfdee6105cde19d2a5c4c4b03608319b173925))
+*   switch to async/await ([e3a15093](https://github.com/dtantsur/rust-osauth/commit/e3a15093739b2a62c011125b19b64db9f3d2f952), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+* **auth:**  replace separate interface/region with endpoint filters ([4bcecd6c](https://github.com/dtantsur/rust-osauth/commit/4bcecd6c1947f21039cd928b6ef10eb875496d88), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+* **identity:**
+  *  remove deprecated user_name ([80125d0b](https://github.com/dtantsur/rust-osauth/commit/80125d0bbfa100e90f45f29c282c2b2203909d2e), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+  *  add a separate Scope object ([24dcd3ca](https://github.com/dtantsur/rust-osauth/commit/24dcd3caeca55e807c84da59f51cda6257bcd9f4))
+  *  enable project scope to take id or name (#10) ([c6b31f33](https://github.com/dtantsur/rust-osauth/commit/c6b31f3336bc25555423802f3c60aa054569c7c8), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+
+#### Bug Fixes
+
+*   use async lock for caches and avoid Arc::clone ([04aad97f](https://github.com/dtantsur/rust-osauth/commit/04aad97fcc5fc40ecc2312e29c170fe21ec85c6d))
+
 ## 0.2.5 (2019-09-30)
 
 #### Features
