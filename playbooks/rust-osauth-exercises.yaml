@@ -1,0 +1,47 @@
+- hosts: all
+  become: true
+
+  roles:
+    - clone-devstack-gate-to-workspace
+    - create-devstack-local-conf
+    - install-devstack
+
+- hosts: all
+  tasks:
+    - name: Dump clouds.yaml
+      command: grep -v password /etc/openstack/clouds.yaml
+
+- hosts: all
+  environment:
+    OS_CLOUD: devstack-admin
+
+  tasks:
+    - name: Prepare flavor for tests
+      command: openstack flavor create test-flavor --ram 512 --disk 5 --vcpu 1 --public
+
+- hosts: all
+  environment:
+    OS_CLOUD: devstack
+    RUST_BACKTRACE: 1
+    RUST_LOG: osauth,osproto
+
+  tasks:
+    - name: Build the project
+      command: cargo build --release --all-features
+      args:
+        chdir: '{{ zuul.project.src_dir }}'
+
+    - name: Run unit tests
+      command: cargo test -- --test-threads=1
+      args:
+        chdir: '{{ zuul.project.src_dir }}'
+
+    - name: Run examples
+      command: cargo run --example {{ item }}
+      args:
+        chdir: '{{ zuul.project.src_dir }}'
+      with_items:
+        - compute-versions
+        - list-servers
+        - list-servers-paginated
+        - object-store

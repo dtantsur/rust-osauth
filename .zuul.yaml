@@ -1,0 +1,67 @@
+- job:
+    name: rust-osauth-exercises
+    parent: rust-base
+    description: |
+      Run rust-openstack acceptance test on master branch
+    run: playbooks/rust-osauth-exercises.yaml
+
+- job:
+    name: rust-osauth-exercises-train
+    parent: rust-osauth-exercises
+    description: |
+      Run rust-openstack acceptance test on train branch
+    vars:
+      global_env:
+        OS_BRANCH: stable/train
+
+- job:
+    name: rust-osauth-exercises-stein
+    parent: rust-osauth-exercises
+    description: |
+      Run rust-openstack acceptance test on stein branch
+    vars:
+      global_env:
+        OS_BRANCH: stable/stein
+    nodeset: ubuntu-xenial
+
+- job:
+    name: rust-osauth-exercises-rocky
+    parent: rust-osauth-exercises
+    description: |
+      Run rust-openstack acceptance test on rocky branch
+    vars:
+      global_env:
+        OS_BRANCH: stable/rocky
+    nodeset: ubuntu-xenial
+
+- job:
+    name: rust-osauth-exercises-queens
+    parent: rust-osauth-exercises
+    description: |
+      Run rust-openstack acceptance test on queens branch
+    vars:
+      global_env:
+        OS_BRANCH: stable/queens
+    nodeset: ubuntu-xenial
+    voting: false
+
+- job:
+    name: rust-osauth-exercises-nightly
+    parent: rust-base
+    description: |
+      Run rust-openstack acceptance test on master branch with nightly rust.
+    run: playbooks/rust-osauth-exercises.yaml
+    vars:
+      rustup_toolchain: nightly
+    voting: false
+
+- project:
+    name: dtantsur/rust-osauth
+    check:
+      jobs:
+        - rust-osauth-exercises
+        - rust-osauth-exercises-train
+        - rust-osauth-exercises-stein
+        - rust-osauth-exercises-rocky
+        - rust-osauth-exercises-queens
+        - rust-osauth-exercises-nightly
