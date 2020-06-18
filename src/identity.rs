@@ -221,13 +221,19 @@ impl Password {
         S2: Into<String>,
         S3: Into<String>,
     {
-        let url = auth_url.into_url()?;
-        // TODO: more robust logic?
-        let token_endpoint = if url.path().ends_with("/v3") {
+        let mut url = auth_url.into_url()?;
+
+        let _ = url
+            .path_segments_mut()
+            .map_err(|_| Error::new(ErrorKind::InvalidConfig, "Invalid auth_url: wrong schema?"))?
+            .pop_if_empty();
+
+        let token_endpoint = if url.as_str().ends_with("/v3") {
             format!("{}/auth/tokens", url)
         } else {
             format!("{}/v3/auth/tokens", url)
         };
+
         let pw = protocol::UserAndPassword {
             user: protocol::IdOrName::Name(user_name.into()),
             password: password.into(),
@@ -529,6 +535,90 @@ pub mod test {
             IdOrName::Name("example.com".to_string()),
         );
         assert_eq!(id.auth_url().to_string(), "http://127.0.0.1:8080/identity");
+        assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
+        assert_eq!(
+            id.project(),
+            Some(&IdOrName::Name("cool project".to_string()))
+        );
+        assert_eq!(
+            &id.token_endpoint,
+            "http://127.0.0.1:8080/identity/v3/auth/tokens"
+        );
+        assert_eq!(id.endpoint_filters().region, None);
+    }
+
+    #[test]
+    fn test_token_endpoint_with_trailing_slash() {
+        let id = Password::new(
+            "http://127.0.0.1:8080/identity/",
+            "user",
+            "pa$$w0rd",
+            "example.com",
+        )
+        .unwrap()
+        .with_project_scope(
+            IdOrName::Name("cool project".to_string()),
+            IdOrName::Name("example.com".to_string()),
+        );
+        assert_eq!(id.auth_url().to_string(), "http://127.0.0.1:8080/identity");
+        assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
+        assert_eq!(
+            id.project(),
+            Some(&IdOrName::Name("cool project".to_string()))
+        );
+        assert_eq!(
+            &id.token_endpoint,
+            "http://127.0.0.1:8080/identity/v3/auth/tokens"
+        );
+        assert_eq!(id.endpoint_filters().region, None);
+    }
+
+    #[test]
+    fn test_token_endpoint_with_v3() {
+        let id = Password::new(
+            "http://127.0.0.1:8080/identity/v3",
+            "user",
+            "pa$$w0rd",
+            "example.com",
+        )
+        .unwrap()
+        .with_project_scope(
+            IdOrName::Name("cool project".to_string()),
+            IdOrName::Name("example.com".to_string()),
+        );
+        assert_eq!(
+            id.auth_url().to_string(),
+            "http://127.0.0.1:8080/identity/v3"
+        );
+        assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
+        assert_eq!(
+            id.project(),
+            Some(&IdOrName::Name("cool project".to_string()))
+        );
+        assert_eq!(
+            &id.token_endpoint,
+            "http://127.0.0.1:8080/identity/v3/auth/tokens"
+        );
+        assert_eq!(id.endpoint_filters().region, None);
+    }
+
+    #[test]
+    fn test_token_endpoint_with_trailing_slash_v3() {
+        let id = Password::new(
+            "http://127.0.0.1:8080/identity/v3/",
+            "user",
+            "pa$$w0rd",
+            "example.com",
+        )
+        .unwrap()
+        .with_project_scope(
+            IdOrName::Name("cool project".to_string()),
+            IdOrName::Name("example.com".to_string()),
+        );
+        assert_eq!(
+            id.auth_url().to_string(),
+            "http://127.0.0.1:8080/identity/v3"
+        );
         assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
         assert_eq!(
             id.project(),
