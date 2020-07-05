@@ -50,7 +50,7 @@ impl<Srv> Adapter<Srv> {
         Adapter::from_session(Session::new(auth_type), service)
     }
 
-    /// Create a new adapter from a `clouds.yaml` configuration file.
+    /// Create a new adapter from `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files.
     #[inline]
     pub fn from_config<S: AsRef<str>>(cloud_name: S, service: Srv) -> Result<Adapter<Srv>, Error> {
         Ok(config::from_config(cloud_name)?.into_adapter(service))
