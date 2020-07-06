@@ -171,6 +171,11 @@ pub fn from_env() -> Result<Session, Error> {
         if let Ok(interface) = env::var("OS_INTERFACE") {
             filters.set_interfaces(InterfaceType::from_str(&interface)?);
         }
+
+        if let Ok(region) = env::var("OS_REGION_NAME") {
+            filters.region = Some(region);
+        }
+
         *session.endpoint_filters_mut() = filters;
 
         Ok(session)
