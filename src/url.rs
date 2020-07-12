@@ -14,16 +14,16 @@
 
 //! Handy primitives for working with URLs.
 
+#![allow(unused_results)]
+
 use reqwest::Url;
 
 #[inline]
-#[allow(unused_results)]
 pub fn is_root(url: &Url) -> bool {
-    url.path_segments().unwrap().any(|x| !x.is_empty())
+    !url.path_segments().unwrap().any(|x| !x.is_empty())
 }
 
 #[inline]
-#[allow(unused_results)]
 pub fn extend<I>(mut url: Url, segments: I) -> Url
 where
     I: IntoIterator,
@@ -37,11 +37,53 @@ where
 }
 
 #[inline]
-#[allow(unused_results)]
-pub fn pop(mut url: Url, keep_slash: bool) -> Url {
-    url.path_segments_mut().unwrap().pop_if_empty().pop();
-    if keep_slash {
-        url.path_segments_mut().unwrap().pop_if_empty().push("");
-    }
+pub fn pop(mut url: Url) -> Url {
+    url.path_segments_mut()
+        .expect("Invalid URL")
+        .pop_if_empty()
+        .pop()
+        .pop_if_empty()
+        .push("");
     url
+}
+
+#[cfg(test)]
+mod test {
+    use reqwest::Url;
+
+    use super::*;
+
+    #[test]
+    fn test_is_root() {
+        assert!(is_root(&Url::parse("https://example.com").unwrap()));
+        assert!(is_root(&Url::parse("https://example.com/").unwrap()));
+    }
+
+    #[test]
+    fn test_is_not_root() {
+        assert!(!is_root(&Url::parse("https://example.com/v1/").unwrap()));
+        assert!(!is_root(
+            &Url::parse("https://example.com/v2/project_id").unwrap()
+        ));
+    }
+
+    #[test]
+    fn test_pop() {
+        assert_eq!(
+            pop(Url::parse("https://example.com/v1").unwrap()).as_str(),
+            "https://example.com/"
+        );
+        assert_eq!(
+            pop(Url::parse("https://example.com/v1/").unwrap()).as_str(),
+            "https://example.com/"
+        );
+        assert_eq!(
+            pop(Url::parse("https://example.com/v1/foobar").unwrap()).as_str(),
+            "https://example.com/v1/"
+        );
+        assert_eq!(
+            pop(Url::parse("https://example.com/v1/foobar/").unwrap()).as_str(),
+            "https://example.com/v1/"
+        );
+    }
 }

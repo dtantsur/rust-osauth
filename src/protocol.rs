@@ -16,7 +16,7 @@
 
 use std::convert::TryFrom;
 
-use log::{debug, trace, warn};
+use log::{debug, error, trace, warn};
 use osproto::common::{Root, Version};
 use reqwest::{Method, Url};
 
@@ -91,6 +91,11 @@ impl ServiceInfo {
 
                 ServiceInfo::try_from(ver)
             } else {
+                error!(
+                    "Major version {} of the {} service is not supported",
+                    ver.id,
+                    service.catalog_type()
+                );
                 Err(Error::new(
                     ErrorKind::EndpointNotFound,
                     "Major version not supported",
@@ -150,11 +155,15 @@ impl ServiceInfo {
             Ok(root) => root,
             Err(e) if e.kind() == ErrorKind::ResourceNotFound => {
                 if url::is_root(&endpoint) {
+                    error!(
+                        "Got HTTP 404 from the root URL {}, invalid endpoint for {} service",
+                        endpoint, catalog_type
+                    );
                     let err = Error::new_endpoint_not_found(catalog_type);
                     return Err(err);
                 } else {
                     debug!("Got HTTP 404 from {}, trying parent endpoint", endpoint);
-                    fetch_root(catalog_type, url::pop(endpoint, true), auth).await?
+                    fetch_root(catalog_type, url::pop(endpoint), auth).await?
                 }
             }
             Err(e) => return Err(e),
