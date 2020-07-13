@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.3.1 (2020-07-13)
+
+#### Bug Fixes
+
+* **config:**  read region from env (OS_REGION_NAME) when calling from_env ([d624ba40](https://github.com/dtantsur/rust-osauth/commit/d624ba407f9322a3a4cb519bef4d85983637fb65))
+* **identity:**  Account for auth_urls with trailing slash (#14) ([d38c7827](https://github.com/dtantsur/rust-osauth/commit/d38c7827102dd4b682aa3f805987a358004a33ee))
+* **protocol:**  fall-back to parent URL when doing service discovery (fixes #18) ([1cb0926a](https://github.com/dtantsur/rust-osauth/commit/1cb0926aca5c921bcaa7fbe3e476ee220408474c))
+
 ## 0.3.0 (2020-05-21)
 
 #### Breaking Changes
