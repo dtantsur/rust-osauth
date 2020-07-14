@@ -65,20 +65,15 @@ struct Root {
 /// The values from src are merged into dest. Values in src override values in dest.
 fn merge_mappings(src: &serde_yaml::Mapping, dest: &mut serde_yaml::Mapping) {
     for (src_key, src_value) in src.iter() {
-        if src_value.is_mapping()
-            && dest.contains_key(src_key)
-            && dest.get(src_key).unwrap().is_mapping()
-        {
-            merge_mappings(
-                src_value.as_mapping().unwrap(),
-                dest.get_mut(src_key).unwrap().as_mapping_mut().unwrap(),
-            );
-        } else {
-            match dest.insert(src_key.to_owned(), src_value.to_owned()) {
-                // Ignore the Option returned
-                _ => {}
+        if let Some(src_mapping) = src_value.as_mapping() {
+            if let Some(dest_value) = dest.get_mut(src_key) {
+                if let Some(dest_mapping) = dest_value.as_mapping_mut() {
+                    merge_mappings(src_mapping, dest_mapping);
+                    continue;
+                }
             }
         }
+        let _ = dest.insert(src_key.to_owned(), src_value.to_owned());
     }
 }
 
@@ -88,55 +83,32 @@ fn inject_profiles(
     clouds: &serde_yaml::Mapping,
 ) -> Result<serde_yaml::Value, Error> {
     let mut temp_mapping = serde_yaml::Mapping::new();
-    match temp_mapping.insert(
-        "clouds".into(),
-        serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+
+    if let (Some(clouds_value), Some(clouds_public_value)) = (
+        clouds.get(&"clouds".into()),
+        clouds_public.get(&"public-clouds".into()),
     ) {
-        _ => {} // ignore returned Option
-    };
+        if let (Some(clouds_mapping), Some(clouds_public_mapping)) =
+            (clouds_value.as_mapping(), clouds_public_value.as_mapping())
+        {
+            for (cloud_name, cloud) in clouds_mapping.iter() {
+                if let Some(cloud_mapping) = cloud.as_mapping() {
+                    if let Some(profile_value) = cloud_mapping.get(&"profile".into()) {
+                        if let Some(profile_name) = profile_value.as_str() {
+                            if let Some(profile) = clouds_public_mapping.get(profile_value) {
+                                let mut clouds = serde_yaml::Mapping::new();
+                                let _ = clouds.insert(cloud_name.to_owned(), profile.to_owned());
 
-    let clouds_mapping = clouds.get(&"clouds".into());
-    let clouds_public_mapping = clouds_public.get(&"public-clouds".into());
-
-    if clouds_mapping.is_some()
-        && clouds_mapping.unwrap().is_mapping()
-        && clouds_public_mapping.is_some()
-        && clouds_public_mapping.unwrap().is_mapping()
-    {
-        for (cloud_name, cloud) in clouds_mapping.unwrap().as_mapping().unwrap().iter() {
-            if let Some(cloud_map) = cloud.as_mapping() {
-                if let Some(profile) = cloud_map.get(&"profile".into()) {
-                    if clouds_public_mapping
-                        .unwrap()
-                        .as_mapping()
-                        .unwrap()
-                        .get(profile)
-                        .is_none()
-                    {
-                        return Err(Error::new(
-                            ErrorKind::InvalidConfig,
-                            format!(
-                                "Missing profile {} in clouds-public.yaml.",
-                                profile.as_str().unwrap()
-                            ),
-                        ));
-                    } else {
-                        match temp_mapping
-                            .get_mut(&"clouds".into())
-                            .unwrap()
-                            .as_mapping_mut()
-                            .unwrap()
-                            .insert(
-                                cloud_name.to_owned(),
-                                clouds_public_mapping
-                                    .unwrap()
-                                    .as_mapping()
-                                    .unwrap()
-                                    .get(profile)
-                                    .unwrap()
-                                    .to_owned(),
-                            ) {
-                            _ => {} // ignore returned Option
+                                let _ = temp_mapping.insert("clouds".into(), clouds.into());
+                            } else {
+                                return Err(Error::new(
+                                    ErrorKind::InvalidConfig,
+                                    format!(
+                                        "Missing profile {} in clouds-public.yaml.",
+                                        profile_name
+                                    ),
+                                ));
+                            }
                         }
                     }
                 }
@@ -251,16 +223,21 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
                 format!("clouds.yaml's root is not a Mapping"),
             )
         })?,
-    )
-    .unwrap();
+    )?;
 
-    let mut clouds_root: Root =
-        serde_yaml::from_str(serde_yaml::to_string(&clouds).unwrap().as_str()).map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidConfig,
-                format!("Cannot parse clouds.yaml: {}", e),
-            )
-        })?;
+    let clouds_string = serde_yaml::to_string(&clouds).map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            format!("Failed to convert yaml to String: {}", e),
+        )
+    })?;
+
+    let mut clouds_root: Root = serde_yaml::from_str(&clouds_string).map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            format!("Cannot parse clouds.yaml: {}", e),
+        )
+    })?;
 
     let name = cloud_name.as_ref();
     let cloud =
