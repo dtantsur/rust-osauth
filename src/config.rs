@@ -67,9 +67,12 @@ fn merge_mappings(src: &serde_yaml::Mapping, dest: &mut serde_yaml::Mapping) {
     for (src_key, src_value) in src.iter() {
         if let Some(src_mapping) = src_value.as_mapping() {
             if let Some(dest_value) = dest.get_mut(src_key) {
-                if let Some(dest_mapping) = dest_value.as_mapping_mut() {
-                    merge_mappings(src_mapping, dest_mapping);
-                    continue;
+                match dest_value.as_mapping_mut() {
+                    Some(dest_mapping) => {
+                        merge_mappings(src_mapping, dest_mapping);
+                        continue;
+                    }
+                    None => warn!("Type mismatch while merging mappings. Expected {:?} to be a Mapping. Overriding destination.", dest_value),
                 }
             }
         }
@@ -677,5 +680,25 @@ clouds:
             "url1",
             dest_auth.get(&"auth_url".into()).unwrap().as_str().unwrap()
         );
+    }
+
+    #[test]
+    fn test_merge_type_mismatch() {
+        let src_data = r#"
+map1:
+  map2:
+    auth:
+      password: password1"#;
+
+        let dest_data = r#"
+map1:
+  map2: 123"#;
+
+        let src: serde_yaml::Value = serde_yaml::from_str(src_data).unwrap();
+        let mut dest: serde_yaml::Value = serde_yaml::from_str(dest_data).unwrap();
+
+        merge_mappings(&src.as_mapping().unwrap(), dest.as_mapping_mut().unwrap());
+
+        assert_eq!(src, dest);
     }
 }
