@@ -228,14 +228,7 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         })?,
     )?;
 
-    let clouds_string = serde_yaml::to_string(&clouds).map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            format!("Failed to convert yaml to String: {}", e),
-        )
-    })?;
-
-    let mut clouds_root: Root = serde_yaml::from_str(&clouds_string).map_err(|e| {
+    let mut clouds_root: Root = serde_yaml::from_value(clouds).map_err(|e| {
         Error::new(
             ErrorKind::InvalidConfig,
             format!("Cannot parse clouds.yaml: {}", e),
