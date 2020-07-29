@@ -202,13 +202,13 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         secure.as_mapping().ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidConfig,
-                format!("secure.yaml's root is not a Mapping"),
+                "secure.yaml's root is not a Mapping".to_string(),
             )
         })?,
         clouds.as_mapping_mut().ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidConfig,
-                format!("clouds.yaml's root is not a Mapping"),
+                "clouds.yaml's root is not a Mapping".to_string(),
             )
         })?,
     );
@@ -217,13 +217,13 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         clouds_public.as_mapping().ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidConfig,
-                format!("clouds-public.yaml's root is not a Mapping"),
+                "clouds-public.yaml's root is not a Mapping".to_string(),
             )
         })?,
         clouds.as_mapping_mut().ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidConfig,
-                format!("clouds.yaml's root is not a Mapping"),
+                "clouds.yaml's root is not a Mapping".to_string(),
             )
         })?,
     )?;
