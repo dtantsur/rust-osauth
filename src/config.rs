@@ -314,12 +314,13 @@ pub mod test {
     use super::merge_mappings;
     use super::*;
     use env::set_current_dir;
+    use std::error::Error;
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
 
     #[test]
-    fn test_from_config() {
+    fn test_from_config() -> Result<(), Box<dyn Error>> {
         let dir = tempdir().unwrap();
 
         let clouds_file_path = dir.path().join("clouds.yaml");
@@ -358,17 +359,20 @@ pub mod test {
 
         set_current_dir(&dir).unwrap();
 
-        assert!(from_config("cloud_name").is_ok());
+        // Here is the test
+        let _ = from_config("cloud_name")?;
 
         drop(clouds_file);
         drop(clouds_public_file);
         drop(secure_file);
 
         dir.close().unwrap();
+
+        Ok(())
     }
 
     #[test]
-    fn test_from_config_clouds_yaml_only() {
+    fn test_from_config_clouds_yaml_only() -> Result<(), Box<dyn Error>> {
         let dir = tempdir().unwrap();
 
         let clouds_file_path = dir.path().join("clouds.yaml");
@@ -387,10 +391,13 @@ pub mod test {
 
         set_current_dir(&dir).unwrap();
 
-        assert!(from_config("cloud_name").is_ok());
+        // This is the test
+        let _ = from_config("cloud_name")?;
 
         drop(clouds_file);
         dir.close().unwrap();
+
+        Ok(())
     }
 
     #[test]
@@ -582,8 +589,8 @@ public-clouds:
 
     #[test]
     fn test_find_config_fail() {
-        let found = find_config("shouldnt_exist");
-        assert!(found.is_none());
+        let config = find_config("shouldnt_exist");
+        assert_eq!(config, None);
     }
 
     #[test]
