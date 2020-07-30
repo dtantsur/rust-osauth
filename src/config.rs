@@ -314,10 +314,16 @@ pub mod test {
     use super::merge_mappings;
     use super::*;
     use env::set_current_dir;
+    use lazy_static::lazy_static;
     use std::error::Error;
     use std::fs::File;
     use std::io::Write;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    lazy_static! {
+        static ref TEST_LOCK: Mutex<()> = Mutex::new(());
+    }
 
     #[test]
     fn test_from_config() -> Result<(), Box<dyn Error>> {
@@ -357,11 +363,13 @@ pub mod test {
         )
         .unwrap();
 
+        let test_guard = TEST_LOCK.lock().unwrap();
         set_current_dir(&dir).unwrap();
 
         // Here is the test
         let _ = from_config("cloud_name")?;
 
+        drop(test_guard);
         drop(clouds_file);
         drop(clouds_public_file);
         drop(secure_file);
@@ -389,11 +397,13 @@ pub mod test {
         )
         .unwrap();
 
+        let test_guard = TEST_LOCK.lock().unwrap();
         set_current_dir(&dir).unwrap();
 
         // This is the test
         let _ = from_config("cloud_name")?;
 
+        drop(test_guard);
         drop(clouds_file);
         dir.close().unwrap();
 
@@ -561,9 +571,11 @@ public-clouds:
         let mut file = File::create(&file_path).unwrap();
         write!(file, "test data").unwrap();
 
+        let test_guard = TEST_LOCK.lock().unwrap();
         set_current_dir(&dir).unwrap();
 
         let actual = read_config_file("test_read_config_file_success").unwrap();
+        drop(test_guard);
 
         assert_eq!("test data", actual);
 
@@ -577,9 +589,12 @@ public-clouds:
         let file_path = dir.path().join("test_find_config_success");
         let file = File::create(&file_path).unwrap();
 
+        let test_guard = TEST_LOCK.lock().unwrap();
         set_current_dir(&dir).unwrap();
 
         let found = find_config("test_find_config_success").unwrap();
+
+        drop(test_guard);
 
         assert_eq!(file_path, found);
 
