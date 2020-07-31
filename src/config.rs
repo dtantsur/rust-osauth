@@ -82,8 +82,8 @@ fn merge_mappings(src: &serde_yaml::Mapping, dest: &mut serde_yaml::Mapping) {
 
 // Inject profiles from clouds-public.yaml into clouds.yaml and return it in a new Value
 fn inject_profiles(
-    clouds_public: &serde_yaml::Mapping,
-    clouds: &serde_yaml::Mapping,
+    clouds_public: serde_yaml::Mapping,
+    clouds: serde_yaml::Mapping,
 ) -> Result<serde_yaml::Value, Error> {
     let mut temp_mapping = serde_yaml::Mapping::new();
 
@@ -119,7 +119,7 @@ fn inject_profiles(
         }
     }
 
-    merge_mappings(clouds, &mut temp_mapping);
+    merge_mappings(&clouds, &mut temp_mapping);
     Ok(serde_yaml::Value::Mapping(temp_mapping))
 }
 
@@ -214,18 +214,24 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     );
 
     clouds = inject_profiles(
-        clouds_public.as_mapping().ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidConfig,
-                "clouds-public.yaml's root is not a Mapping".to_string(),
-            )
-        })?,
-        clouds.as_mapping_mut().ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidConfig,
-                "clouds.yaml's root is not a Mapping".to_string(),
-            )
-        })?,
+        match clouds_public {
+            serde_yaml::Value::Mapping(mapping) => mapping,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidConfig,
+                    "clouds-public.yaml's root is not a Mapping".to_string(),
+                ))
+            }
+        },
+        match clouds {
+            serde_yaml::Value::Mapping(mapping) => mapping,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidConfig,
+                    "clouds.yaml's root is not a Mapping".to_string(),
+                ))
+            }
+        },
     )?;
 
     let mut clouds_root: Root = serde_yaml::from_value(clouds).map_err(|e| {
@@ -434,12 +440,17 @@ public-clouds:
         )
         .unwrap();
 
-        let err = inject_profiles(
-            clouds_public_data.as_mapping().unwrap(),
-            clouds_data.as_mapping().unwrap(),
-        );
-        assert_eq!(ErrorKind::InvalidConfig, err.as_ref().unwrap_err().kind());
-        assert_eq!("configuration file cannot be found or is invalid: Missing profile test_profile in clouds-public.yaml.", format!("{}", err.unwrap_err()));
+        if let (
+            serde_yaml::Value::Mapping(clouds_public_mapping),
+            serde_yaml::Value::Mapping(clouds_mapping),
+        ) = (clouds_public_data, clouds_data)
+        {
+            let err = inject_profiles(clouds_public_mapping, clouds_mapping);
+            assert_eq!(ErrorKind::InvalidConfig, err.as_ref().unwrap_err().kind());
+            assert_eq!("configuration file cannot be found or is invalid: Missing profile test_profile in clouds-public.yaml.", format!("{}", err.unwrap_err()));
+        } else {
+            panic!("Error in test logic.");
+        }
     }
 
     #[test]
@@ -466,91 +477,95 @@ public-clouds:
         )
         .unwrap();
 
-        let actual = inject_profiles(
-            clouds_public_data.as_mapping().unwrap(),
-            clouds_data.as_mapping().unwrap(),
-        )
-        .unwrap();
+        if let (
+            serde_yaml::Value::Mapping(clouds_public_mapping),
+            serde_yaml::Value::Mapping(clouds_mapping),
+        ) = (clouds_public_data, clouds_data)
+        {
+            let actual = inject_profiles(clouds_public_mapping, clouds_mapping).unwrap();
 
-        assert_eq!(
-            "region2",
-            actual
-                .as_mapping()
-                .unwrap()
-                .get(&"clouds".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"cloud_name".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"region_name".into())
-                .unwrap()
-        );
+            assert_eq!(
+                "region2",
+                actual
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"clouds".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"cloud_name".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"region_name".into())
+                    .unwrap()
+            );
 
-        assert_eq!(
-            "user1",
-            actual
-                .as_mapping()
-                .unwrap()
-                .get(&"clouds".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"cloud_name".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"auth".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"username".into())
-                .unwrap()
-        );
+            assert_eq!(
+                "user1",
+                actual
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"clouds".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"cloud_name".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"auth".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"username".into())
+                    .unwrap()
+            );
 
-        assert_eq!(
-            "password1",
-            actual
-                .as_mapping()
-                .unwrap()
-                .get(&"clouds".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"cloud_name".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"auth".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"password".into())
-                .unwrap()
-        );
+            assert_eq!(
+                "password1",
+                actual
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"clouds".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"cloud_name".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"auth".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"password".into())
+                    .unwrap()
+            );
 
-        assert_eq!(
-            "url2",
-            actual
-                .as_mapping()
-                .unwrap()
-                .get(&"clouds".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"cloud_name".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"auth".into())
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"auth_url".into())
-                .unwrap()
-        );
+            assert_eq!(
+                "url2",
+                actual
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"clouds".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"cloud_name".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"auth".into())
+                    .unwrap()
+                    .as_mapping()
+                    .unwrap()
+                    .get(&"auth_url".into())
+                    .unwrap()
+            );
+        } else {
+            panic!("Error in test logic.");
+        }
     }
 
     #[test]
