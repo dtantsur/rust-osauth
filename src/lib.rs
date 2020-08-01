@@ -44,7 +44,7 @@
 //!   services without authentication.
 //!
 //! A `Session` can be created directly by loading it:
-//! * From the `clouds.yaml` configuration file using [from_config](fn.from_config.html).
+//! * From the `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files using [from_config](fn.from_config.html).
 //! * From environment variables using [from_env](fn.from_env.html).
 //!
 //! See [Session](struct.Session.html) documentation for the details on using a `Session` for making
