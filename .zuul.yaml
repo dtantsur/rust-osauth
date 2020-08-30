@@ -6,6 +6,15 @@
     run: playbooks/rust-osauth-exercises.yaml
 
 - job:
+    name: rust-osauth-exercises-ussuri
+    parent: rust-osauth-exercises
+    description: |
+      Run rust-openstack acceptance test on ussuri branch
+    vars:
+      global_env:
+        OS_BRANCH: stable/ussuri
+
+- job:
     name: rust-osauth-exercises-train
     parent: rust-osauth-exercises
     description: |
@@ -33,6 +42,7 @@
       global_env:
         OS_BRANCH: stable/rocky
     nodeset: ubuntu-xenial
+    voting: false
 
 - job:
     name: rust-osauth-exercises-queens
@@ -60,6 +70,7 @@
     check:
       jobs:
         - rust-osauth-exercises
+        - rust-osauth-exercises-ussuri
         - rust-osauth-exercises-train
         - rust-osauth-exercises-stein
         - rust-osauth-exercises-rocky
