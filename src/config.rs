@@ -20,10 +20,8 @@ use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use dirs;
 use log::warn;
 use serde::Deserialize;
-use serde_yaml;
 
 use super::identity::{Password, Scope};
 use super::{EndpointFilters, Error, ErrorKind, InterfaceType, Session};

@@ -15,6 +15,7 @@
 //! Endpoint filters for looking up endpoints.
 
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -37,7 +38,7 @@ pub enum InterfaceType {
 }
 
 /// A list of acceptable interface types.
-#[derive(Debug, Clone, Copy, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct ValidInterfaces {
     items: [InterfaceType; 3],
     len: u8,
@@ -158,6 +159,13 @@ impl<'s> FromIterator<&'s InterfaceType> for ValidInterfaces {
 impl PartialEq for ValidInterfaces {
     fn eq(&self, other: &ValidInterfaces) -> bool {
         self.len == other.len && self.items[..self.len as usize] == other.items[..self.len as usize]
+    }
+}
+
+impl Hash for ValidInterfaces {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.len.hash(state);
+        self.items[..self.len as usize].hash(state);
     }
 }
 
@@ -333,7 +341,7 @@ impl EndpointFilters {
     /// Clone defaults from the provided filters.
     pub(crate) fn with_defaults(mut self, other: &EndpointFilters) -> EndpointFilters {
         if self.interfaces.is_empty() {
-            self.interfaces = other.interfaces.clone();
+            self.interfaces = other.interfaces;
         }
         self.region = self.region.or_else(|| other.region.clone());
         self
@@ -342,10 +350,12 @@ impl EndpointFilters {
 
 #[cfg(test)]
 pub mod test {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
     use osproto::identity::{CatalogRecord, Endpoint};
 
     use super::super::{Error, ErrorKind};
-
     use super::{EndpointFilters, InterfaceType, ValidInterfaces};
     use InterfaceType::*;
 
@@ -530,6 +540,29 @@ pub mod test {
         assert_eq!(vi.len(), 2);
         assert!(vi.push(Internal));
         assert_eq!(*vi, [Public, Admin, Internal]);
+    }
+
+    fn get_hash(value: &ValidInterfaces) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn test_valid_interfaces_cmp() {
+        let mut vi1 = ValidInterfaces::default();
+        let mut vi2 = ValidInterfaces::default();
+        assert_eq!(vi1, vi2);
+        assert_eq!(get_hash(&vi1), get_hash(&vi2));
+        assert!(!vi1.push(Public));
+        assert_eq!(vi1, vi2);
+        assert_eq!(get_hash(&vi1), get_hash(&vi2));
+        assert!(vi2.push(Internal));
+        assert!(vi1 != vi2);
+        assert!(get_hash(&vi1) != get_hash(&vi2));
+        assert!(vi1.push(Internal));
+        assert_eq!(vi1, vi2);
+        assert_eq!(get_hash(&vi1), get_hash(&vi2));
     }
 
     #[test]

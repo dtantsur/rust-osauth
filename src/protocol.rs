@@ -151,7 +151,7 @@ impl ServiceInfo {
         let secure = endpoint.scheme() == "https";
         let catalog_type = service.catalog_type();
 
-        let root = match fetch_root(catalog_type, endpoint.clone(), auth.clone()).await {
+        let root = match fetch_root(catalog_type, endpoint.clone(), auth).await {
             Ok(root) => root,
             Err(e) if e.kind() == ErrorKind::ResourceNotFound => {
                 if url::is_root(&endpoint) {

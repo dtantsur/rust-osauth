@@ -356,10 +356,8 @@ impl Password {
     async fn do_refresh(&self, force: bool) -> Result<(), Error> {
         // This is executed every request at least once, so it's important to start with a read
         // lock. We expect to hit this branch most of the time.
-        if !force {
-            if token_alive(&self.cached_token.read().await) {
-                return Ok(());
-            }
+        if !force && token_alive(&self.cached_token.read().await) {
+            return Ok(());
         }
 
         let mut lock = self.cached_token.write().await;
