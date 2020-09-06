@@ -1,5 +1,15 @@
 # Change Log
 
+## 0.3.2 (2020-09-06)
+
+#### Bug Fixes
+
+*   several suspicious places detected by clippy ([c3d10c97](https://github.com/dtantsur/rust-osauth/commit/c3d10c97b09f3cb8bdaf63e3234e085d3aa1df47))
+
+#### Features
+
+*   Add support for clouds-public.yaml and secure.yaml (#16) ([2c3e4331](https://github.com/dtantsur/rust-osauth/commit/2c3e4331d64e86690885b5e23996a3e4da2231b8))
+
 ## 0.3.1 (2020-07-13)
 
 #### Bug Fixes
