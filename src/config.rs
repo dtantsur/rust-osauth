@@ -24,13 +24,16 @@ use log::warn;
 use serde::Deserialize;
 
 use super::identity::{Password, Scope};
-use super::{EndpointFilters, Error, ErrorKind, InterfaceType, Session};
+use super::{BasicAuth, EndpointFilters, Error, ErrorKind, InterfaceType, Session};
 
 use crate::identity::IdOrName;
 
 #[derive(Debug, Deserialize)]
 struct Auth {
-    auth_url: String,
+    #[serde(default)]
+    auth_url: Option<String>,
+    #[serde(default)]
+    endpoint: Option<String>,
     password: String,
     #[serde(default)]
     project_name: Option<String>,
@@ -44,6 +47,8 @@ struct Auth {
 #[derive(Debug, Deserialize)]
 struct Cloud {
     auth: Auth,
+    #[serde(default)]
+    auth_type: Option<String>,
     #[serde(default)]
     region_name: Option<String>,
 }
@@ -221,6 +226,46 @@ fn read_yaml(filename: &str, default_root_key: Option<&str>) -> Result<serde_yam
     }
 }
 
+fn from_identity_auth(auth: Auth, region_name: Option<String>) -> Result<Session, Error> {
+    let user_domain = auth
+        .user_domain_name
+        .unwrap_or_else(|| String::from("Default"));
+    let project_domain = auth
+        .project_domain_name
+        .unwrap_or_else(|| String::from("Default"));
+    let auth_url = auth.auth_url.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "Identity authentication requires an auth_url",
+        )
+    })?;
+    let mut id = Password::new(&auth_url, auth.username, auth.password, user_domain)?;
+    if let Some(project_name) = auth.project_name {
+        let scope = Scope::Project {
+            project: IdOrName::Name(project_name),
+            domain: Some(IdOrName::Name(project_domain)),
+        };
+        id.set_scope(scope);
+    }
+    if let Some(region) = region_name {
+        id.endpoint_filters_mut().region = Some(region);
+    }
+
+    Ok(Session::new(id))
+}
+
+fn from_basic_auth(auth: Auth) -> Result<Session, Error> {
+    let endpoint = auth.endpoint.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "Identity authentication requires an endpoint",
+        )
+    })?;
+
+    let id = BasicAuth::new(&endpoint, auth.username, auth.password)?;
+    Ok(Session::new(id))
+}
+
 /// Create a `Session` from the config file.
 pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     let mut clouds = read_yaml("clouds.yaml", None)?;
@@ -245,27 +290,16 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
         clouds_root.clouds.clouds.remove(name).ok_or_else(|| {
             Error::new(ErrorKind::InvalidConfig, format!("No such cloud: {}", name))
         })?;
+    let auth_type = cloud.auth_type.unwrap_or_else(|| "password".to_string());
 
-    let auth = cloud.auth;
-    let user_domain = auth
-        .user_domain_name
-        .unwrap_or_else(|| String::from("Default"));
-    let project_domain = auth
-        .project_domain_name
-        .unwrap_or_else(|| String::from("Default"));
-    let mut id = Password::new(&auth.auth_url, auth.username, auth.password, user_domain)?;
-    if let Some(project_name) = auth.project_name {
-        let scope = Scope::Project {
-            project: IdOrName::Name(project_name),
-            domain: Some(IdOrName::Name(project_domain)),
-        };
-        id.set_scope(scope);
+    match auth_type.as_str() {
+        "password" => from_identity_auth(cloud.auth, cloud.region_name),
+        "http_basic" => from_basic_auth(cloud.auth),
+        _ => Err(Error::new(
+            ErrorKind::InvalidConfig,
+            format!("Unsupported authentication type: {}", auth_type),
+        )),
     }
-    if let Some(region) = cloud.region_name {
-        id.endpoint_filters_mut().region = Some(region);
-    }
-
-    Ok(Session::new(id))
 }
 
 const MISSING_ENV_VARS: &str = "Not all required environment variables were provided";
@@ -280,37 +314,52 @@ pub fn from_env() -> Result<Session, Error> {
     if let Ok(cloud_name) = env::var("OS_CLOUD") {
         from_config(cloud_name)
     } else {
-        let auth_url = _get_env("OS_AUTH_URL")?;
         let user_name = _get_env("OS_USERNAME")?;
         let password = _get_env("OS_PASSWORD")?;
-        let user_domain =
-            env::var("OS_USER_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
+        let auth_type = env::var("OS_AUTH_TYPE").unwrap_or_else(|_| "password".to_string());
 
-        let id = Password::new(&auth_url, user_name, password, user_domain)?;
+        match auth_type.as_str() {
+            "password" => {
+                let auth_url = _get_env("OS_AUTH_URL")?;
+                let user_domain =
+                    env::var("OS_USER_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
 
-        let project = _get_env("OS_PROJECT_ID")
-            .map(IdOrName::Id)
-            .or_else(|_| _get_env("OS_PROJECT_NAME").map(IdOrName::Name))?;
+                let id = Password::new(&auth_url, user_name, password, user_domain)?;
 
-        let project_domain = _get_env("OS_PROJECT_DOMAIN_ID")
-            .map(IdOrName::Id)
-            .or_else(|_| _get_env("OS_PROJECT_DOMAIN_NAME").map(IdOrName::Name))
-            .ok();
+                let project = _get_env("OS_PROJECT_ID")
+                    .map(IdOrName::Id)
+                    .or_else(|_| _get_env("OS_PROJECT_NAME").map(IdOrName::Name))?;
 
-        let mut session = Session::new(id.with_project_scope(project, project_domain));
-        let mut filters = EndpointFilters::default();
+                let project_domain = _get_env("OS_PROJECT_DOMAIN_ID")
+                    .map(IdOrName::Id)
+                    .or_else(|_| _get_env("OS_PROJECT_DOMAIN_NAME").map(IdOrName::Name))
+                    .ok();
 
-        if let Ok(interface) = env::var("OS_INTERFACE") {
-            filters.set_interfaces(InterfaceType::from_str(&interface)?);
+                let mut session = Session::new(id.with_project_scope(project, project_domain));
+                let mut filters = EndpointFilters::default();
+
+                if let Ok(interface) = env::var("OS_INTERFACE") {
+                    filters.set_interfaces(InterfaceType::from_str(&interface)?);
+                }
+
+                if let Ok(region) = env::var("OS_REGION_NAME") {
+                    filters.region = Some(region);
+                }
+
+                *session.endpoint_filters_mut() = filters;
+
+                Ok(session)
+            }
+            "http_basic" => {
+                let endpoint = _get_env("OS_ENDPOINT")?;
+                let id = BasicAuth::new(&endpoint, user_name, password)?;
+                Ok(Session::new(id))
+            }
+            _ => Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!("Unsupported authentication type: {}", auth_type),
+            )),
         }
-
-        if let Ok(region) = env::var("OS_REGION_NAME") {
-            filters.region = Some(region);
-        }
-
-        *session.endpoint_filters_mut() = filters;
-
-        Ok(session)
     }
 }
 
@@ -380,6 +429,64 @@ pub mod test {
         drop(secure_file);
 
         dir.close().unwrap();
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_config_password() -> Result<(), Box<dyn Error>> {
+        let dir = tempdir().unwrap();
+
+        let clouds_file_path = dir.path().join("clouds.yaml");
+        let mut clouds_file = File::create(&clouds_file_path).unwrap();
+        write!(
+            clouds_file,
+            r#"clouds:
+  cloud_name:
+    auth_type: password
+    auth:
+      auth_url: http://url1
+      username: user1
+      password: password1"#
+        )
+        .unwrap();
+
+        let test_guard = TEST_LOCK.lock().unwrap();
+        set_current_dir(&dir).unwrap();
+
+        let _ = from_config("cloud_name")?;
+
+        dir.close()?;
+        drop(test_guard);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_config_http_basic() -> Result<(), Box<dyn Error>> {
+        let dir = tempdir().unwrap();
+
+        let clouds_file_path = dir.path().join("clouds.yaml");
+        let mut clouds_file = File::create(&clouds_file_path).unwrap();
+        write!(
+            clouds_file,
+            r#"clouds:
+  cloud_name:
+    auth_type: http_basic
+    auth:
+      endpoint: http://url1
+      username: user1
+      password: password1"#
+        )
+        .unwrap();
+
+        let test_guard = TEST_LOCK.lock().unwrap();
+        set_current_dir(&dir).unwrap();
+
+        let _ = from_config("cloud_name")?;
+
+        dir.close()?;
+        drop(test_guard);
 
         Ok(())
     }

@@ -94,6 +94,7 @@
 mod adapter;
 mod apiversion;
 mod auth;
+mod basic;
 mod config;
 mod endpointfilters;
 mod error;
@@ -111,6 +112,7 @@ mod url;
 pub use crate::adapter::Adapter;
 pub use crate::apiversion::ApiVersion;
 pub use crate::auth::{AuthType, NoAuth};
+pub use crate::basic::BasicAuth;
 pub use crate::config::{from_config, from_env};
 pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces};
 pub use crate::error::{Error, ErrorKind};
