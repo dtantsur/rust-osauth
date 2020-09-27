@@ -51,6 +51,7 @@ pub struct Session {
     auth: Arc<dyn AuthType>,
     cached_info: Arc<RwLock<Cache>>,
     endpoint_filters: EndpointFilters,
+    endpoint_overrides: HashMap<String, Url>,
 }
 
 impl Session {
@@ -62,6 +63,7 @@ impl Session {
             auth: Arc::new(auth_type),
             cached_info: Arc::new(RwLock::new(HashMap::new())),
             endpoint_filters: EndpointFilters::default(),
+            endpoint_overrides: HashMap::new(),
         }
     }
 
@@ -122,6 +124,21 @@ impl Session {
         &mut self.endpoint_filters
     }
 
+    /// Endpoint overrides in use.
+    #[inline]
+    pub fn endpoint_overrides(&self) -> &HashMap<String, Url> {
+        &self.endpoint_overrides
+    }
+
+    /// Modify endpoint overrides.
+    ///
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
+    pub fn endpoint_overrides_mut(&mut self) -> &mut HashMap<String, Url> {
+        self.reset_cache();
+        &mut self.endpoint_overrides
+    }
+
     /// Update the authentication and purges cached endpoint information.
     ///
     /// # Warning
@@ -159,6 +176,17 @@ impl Session {
         self.endpoint_filters.set_interfaces(endpoint_interface);
     }
 
+    /// A convenience call to set an endpoint override for one service.
+    ///
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
+    pub fn set_endpoint_override<Svc: ServiceType>(&mut self, service: Svc, url: Url) {
+        self.reset_cache();
+        let _ = self
+            .endpoint_overrides
+            .insert(service.catalog_type().to_string(), url);
+    }
+
     /// Convert this session into one using the given authentication.
     #[inline]
     pub fn with_auth_type<Auth: AuthType + 'static>(mut self, auth_method: Auth) -> Session {
@@ -177,6 +205,20 @@ impl Session {
     #[inline]
     pub fn with_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> Session {
         self.set_endpoint_interface(endpoint_interface);
+        self
+    }
+
+    /// Convert this session into one using the given endpoint override for the given service.
+    #[inline]
+    pub fn with_endpoint_override<Srv: ServiceType>(mut self, service: Srv, url: Url) -> Session {
+        self.set_endpoint_override(service, url);
+        self
+    }
+
+    /// Convert this session into one using the given endpoint overrides.
+    #[inline]
+    pub fn with_endpoint_overrides(mut self, endpoint_overrides: HashMap<String, Url>) -> Session {
+        *self.endpoint_overrides_mut() = endpoint_overrides;
         self
     }
 
@@ -785,10 +827,14 @@ impl Session {
         Ok(if let Some(info) = lock.get(catalog_type) {
             filter(info)
         } else {
-            let ep = self
-                .auth
-                .get_endpoint(catalog_type.to_string(), self.endpoint_filters.clone())
-                .await?;
+            let ep = match self.endpoint_overrides.get(catalog_type) {
+                Some(found) => found.clone(),
+                None => {
+                    self.auth
+                        .get_endpoint(catalog_type.to_string(), self.endpoint_filters.clone())
+                        .await?
+                }
+            };
             let info = ServiceInfo::fetch(service, ep, self.auth.deref()).await?;
             let value = filter(&info);
             let _ = lock.insert(catalog_type, info);
