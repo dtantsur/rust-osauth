@@ -16,11 +16,12 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use log::warn;
+use reqwest::{Certificate, Client};
 use serde::Deserialize;
 
 use super::identity::{Password, Scope};
@@ -50,6 +51,8 @@ struct Cloud {
     auth: Auth,
     #[serde(default)]
     auth_type: Option<String>,
+    #[serde(default)]
+    cacert: Option<String>,
     #[serde(default)]
     region_name: Option<String>,
 }
@@ -204,7 +207,11 @@ fn read_yaml(filename: &str, default_root_key: Option<&str>) -> Result<serde_yam
     }
 }
 
-fn password_auth_from_cloud(auth: Auth, region_name: Option<String>) -> Result<Session, Error> {
+fn password_auth_from_cloud(
+    client: Client,
+    auth: Auth,
+    region_name: Option<String>,
+) -> Result<Session, Error> {
     let user_domain = auth
         .user_domain_name
         .unwrap_or_else(|| String::from("Default"));
@@ -217,7 +224,8 @@ fn password_auth_from_cloud(auth: Auth, region_name: Option<String>) -> Result<S
             "Identity authentication requires an auth_url",
         )
     })?;
-    let mut id = Password::new(&auth_url, auth.username, auth.password, user_domain)?;
+    let mut id =
+        Password::new_with_client(&auth_url, client, auth.username, auth.password, user_domain)?;
     if let Some(project_name) = auth.project_name {
         let scope = Scope::Project {
             project: IdOrName::Name(project_name),
@@ -230,6 +238,30 @@ fn password_auth_from_cloud(auth: Auth, region_name: Option<String>) -> Result<S
     }
 
     Ok(Session::new(id))
+}
+
+#[inline]
+fn get_client(cacert: Option<String>) -> Result<Client, Error> {
+    let mut builder = Client::builder();
+    if let Some(cert_path) = cacert {
+        let cert_content = fs::read(&cert_path).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidConfig,
+                format!("Cannot open cacert file {}: {}", cert_path, e),
+            )
+        })?;
+
+        let cert = Certificate::from_pem(&cert_content).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidConfig,
+                format!("Cannot parse {} as PEM: {}", cert_path, e),
+            )
+        })?;
+
+        builder = builder.add_root_certificate(cert);
+    }
+
+    Ok(builder.build().expect("Cannot initialize HTTP backend"))
 }
 
 fn from_files(
@@ -256,8 +288,10 @@ fn from_files(
         })?;
     let auth_type = cloud.auth_type.unwrap_or_else(|| "password".to_string());
 
+    let client = get_client(cloud.cacert)?;
+
     match auth_type.as_str() {
-        "password" => password_auth_from_cloud(cloud.auth, cloud.region_name),
+        "password" => password_auth_from_cloud(client, cloud.auth, cloud.region_name),
         "http_basic" => {
             let endpoint = cloud.auth.endpoint.ok_or_else(|| {
                 Error::new(
@@ -266,7 +300,12 @@ fn from_files(
                 )
             })?;
 
-            let id = BasicAuth::new(&endpoint, cloud.auth.username, cloud.auth.password)?;
+            let id = BasicAuth::new_with_client(
+                &endpoint,
+                client,
+                cloud.auth.username,
+                cloud.auth.password,
+            )?;
             Ok(Session::new(id))
         }
         _ => Err(Error::new(
@@ -285,11 +324,15 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     from_files(cloud_name.as_ref(), clouds, clouds_public, secure)
 }
 
-fn password_auth_from_env(user_name: String, password: String) -> Result<Session, Error> {
+fn password_auth_from_env(
+    client: Client,
+    user_name: String,
+    password: String,
+) -> Result<Session, Error> {
     let auth_url = utils::require_env("OS_AUTH_URL")?;
     let user_domain = env::var("OS_USER_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
 
-    let id = Password::new(&auth_url, user_name, password, user_domain)?;
+    let id = Password::new_with_client(&auth_url, client, user_name, password, user_domain)?;
 
     let project = utils::require_env("OS_PROJECT_ID")
         .map(IdOrName::Id)
@@ -326,11 +369,13 @@ pub fn from_env() -> Result<Session, Error> {
     let password = utils::require_env("OS_PASSWORD")?;
     let auth_type = env::var("OS_AUTH_TYPE").unwrap_or_else(|_| "password".to_string());
 
+    let client = get_client(env::var("OS_CACERT").ok())?;
+
     match auth_type.as_str() {
-        "password" => password_auth_from_env(user_name, password),
+        "password" => password_auth_from_env(client, user_name, password),
         "http_basic" => {
             let endpoint = utils::require_env("OS_ENDPOINT")?;
-            let id = BasicAuth::new(&endpoint, user_name, password)?;
+            let id = BasicAuth::new_with_client(&endpoint, client, user_name, password)?;
             Ok(Session::new(id))
         }
         _ => Err(Error::new(
@@ -345,6 +390,8 @@ pub mod test {
     use super::super::utils::test::to_yaml;
     use super::super::ErrorKind;
     use super::{find_config, from_files, inject_profiles, read_yaml, with_one_key};
+
+    use std::io::Write;
 
     #[test]
     fn test_from_config() {
@@ -414,6 +461,70 @@ pub mod test {
             with_one_key("clouds"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_from_config_cacert() {
+        let mut cacert = tempfile::NamedTempFile::new().unwrap();
+        write!(
+            cacert,
+            r#"-----BEGIN CERTIFICATE-----
+MIIBYzCCAQqgAwIBAgIUJcTlPhsFyWG9S0pAAElKuSFEPBYwCgYIKoZIzj0EAwIw
+FDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTIwMTAwMjExNTU1NloXDTIwMTEwMTEx
+NTU1NlowFDESMBAGA1UEAwwJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0D
+AQcDQgAEsfpkV9dAThk54U1K+rXUnNbpwuNo5wCRrKpk+cNR/2HBO8VydNj7dkxs
+VBUvI7M9hY8dgg1jBVoPcCf0GSOvuqM6MDgwFAYDVR0RBA0wC4IJbG9jYWxob3N0
+MAsGA1UdDwQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNH
+ADBEAiAdjF7484kjb3XJoLbgqnZh4V1yHKs57eBVuil9/V0YugIgLwb/vSUAPowb
+hK9jLBzNvo8qzKqaGfnGieuLeXCqFDA=
+-----END CERTIFICATE-----"#
+        )
+        .unwrap();
+        cacert.flush().unwrap();
+
+        let clouds = to_yaml(format!(
+            r#"clouds:
+  cloud_name:
+    auth_type: http_basic
+    auth:
+      endpoint: http://url1
+      username: user1
+      password: password1
+    cacert: "{}""#,
+            cacert.path().display()
+        ));
+
+        let _ = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_from_config_cacert_not_found() {
+        let clouds = to_yaml(
+            r#"clouds:
+  cloud_name:
+    auth_type: http_basic
+    auth:
+      endpoint: http://url1
+      username: user1
+      password: password1
+    cacert: /I/do/not/exist"#,
+        );
+
+        let e = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .err()
+        .unwrap();
+        assert!(e.to_string().contains("Cannot open cacert file"));
     }
 
     #[test]

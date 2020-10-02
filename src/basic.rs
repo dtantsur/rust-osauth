@@ -47,8 +47,23 @@ impl BasicAuth {
         S1: Into<String>,
         S2: Into<String>,
     {
+        Self::new_with_client(endpoint, Client::new(), username, password)
+    }
+
+    /// Create a new HTTP basic authentication method using a fixed endpoint and an HTTP client.
+    pub fn new_with_client<U, S1, S2>(
+        endpoint: U,
+        client: Client,
+        username: S1,
+        password: S2,
+    ) -> Result<BasicAuth, Error>
+    where
+        U: IntoUrl,
+        S1: Into<String>,
+        S2: Into<String>,
+    {
         Ok(BasicAuth {
-            client: Client::new(),
+            client,
             endpoint: endpoint.into_url()?,
             username: username.into(),
             password: password.into(),

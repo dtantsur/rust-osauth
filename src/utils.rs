@@ -62,8 +62,8 @@ pub fn merge_mappings(src: serde_yaml::Mapping, dest: &mut serde_yaml::Mapping, 
 pub mod test {
     use super::merge_mappings;
 
-    pub(crate) fn to_yaml(source: &str) -> serde_yaml::Mapping {
-        let value = serde_yaml::from_str(source).unwrap();
+    pub(crate) fn to_yaml<S: AsRef<str>>(source: S) -> serde_yaml::Mapping {
+        let value = serde_yaml::from_str(source.as_ref()).unwrap();
         match value {
             serde_yaml::Value::Mapping(map) => map,
             _ => panic!("Unexpected {:?}", value),

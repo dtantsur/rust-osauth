@@ -69,12 +69,22 @@ impl NoAuth {
     ///
     /// This endpoint will be returned in response to all `get_endpoint` calls
     /// of the [AuthType](trait.AuthType.html) trait.
+    #[inline]
     pub fn new<U>(endpoint: U) -> Result<NoAuth, Error>
     where
         U: IntoUrl,
     {
+        Self::new_with_client(endpoint, Client::new())
+    }
+
+    /// Create a new fake authentication method using a fixed endpoint and an HTTP client.
+    #[inline]
+    pub fn new_with_client<U>(endpoint: U, client: Client) -> Result<NoAuth, Error>
+    where
+        U: IntoUrl,
+    {
         Ok(NoAuth {
-            client: Client::new(),
+            client,
             endpoint: endpoint.into_url()?,
         })
     }
