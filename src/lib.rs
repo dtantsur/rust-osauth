@@ -108,6 +108,7 @@ pub mod stream;
 #[cfg(feature = "sync")]
 pub mod sync;
 mod url;
+mod utils;
 
 pub use crate::adapter::Adapter;
 pub use crate::apiversion::ApiVersion;
