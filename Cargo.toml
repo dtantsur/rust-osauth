@@ -30,7 +30,7 @@ chrono = { version = "^0.4", features = ["serde"] }
 dirs = "^3.0.1"
 futures = { version = "^0.3", optional = true }
 log = "^0.4"
-osproto = "^0.2.0"
+osproto = "^0.2.1"
 pin-project = "^0.4"
 reqwest = { version = "^0.10", default-features = false, features = ["gzip", "json", "stream"] }
 serde = { version = "^1.0", features = ["derive"] }

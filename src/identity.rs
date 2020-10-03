@@ -103,7 +103,7 @@ pub trait Identity {
 ///     "Default"
 /// )
 /// .expect("Invalid auth_url")
-/// .with_project_scope(IdOrName::Name("project1".to_string()), None);
+/// .with_project_scope(IdOrName::from_name("project1"), IdOrName::from_id("default"));
 ///
 /// let session = osauth::Session::new(auth);
 /// ```
@@ -114,8 +114,8 @@ pub trait Identity {
 /// use osauth::identity::IdOrName;
 ///
 /// let scope = osauth::identity::Scope::Project {
-///     project: IdOrName::Name("project1".to_string()),
-///     domain: Some(IdOrName::Id("default".to_string())),
+///     project: IdOrName::from_name("project1"),
+///     domain: Some(IdOrName::from_id("default")),
 /// };
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
@@ -138,8 +138,8 @@ pub trait Identity {
 /// use osauth::identity::IdOrName;
 ///
 /// let scope = osauth::identity::Scope::Project {
-///     project: IdOrName::Name("project1".to_string()),
-///     domain: Some(IdOrName::Id("default".to_string())),
+///     project: IdOrName::from_name("project1"),
+///     domain: Some(IdOrName::from_id("default")),
 /// };
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
