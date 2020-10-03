@@ -26,14 +26,13 @@
 //! It does NOT provide:
 //! 1. Protocol structures for any services.
 //! 2. Automatic microversion negotiation.
+//! 3. High-level object-oriented API.
 //!
 //! See [openstack crate](https://crates.io/crates/openstack) for these features.
 //!
 //! # Requirements
 //!
-//! This crate requires Rust 2018 edition and relies heavily on
-//! [futures](https://crates.io/crates/futures) 0.1. It has not yet been updated for the new
-//! `async`/`await` syntax and may not be compatible with it out-of-box.
+//! This crate requires Rust 2018 edition and compiler version 1.40.0 or newer.
 //!
 //! # Usage
 //!
@@ -42,9 +41,12 @@
 //! * Using [Password](identity/struct.Password.html) authentication against the Identity service.
 //! * Using [NoAuth](struct.NoAuth.html) authentication type, allowing access to standalone
 //!   services without authentication.
+//! * Using HTTP [BasicAuth](struct.BasicAuth.html) authentication type for services supporting it
+//!   (only ironic and ironic-inspector at the moment).
 //!
 //! A `Session` can be created directly by loading it:
-//! * From the `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files using [from_config](fn.from_config.html).
+//! * From the `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files using
+//!   [from_config](fn.from_config.html).
 //! * From environment variables using [from_env](fn.from_env.html).
 //!
 //! See [Session](struct.Session.html) documentation for the details on using a `Session` for making

@@ -315,7 +315,27 @@ fn from_files(
     }
 }
 
-/// Create a `Session` from the config file.
+/// Create a `Session` from a `clouds.yaml` configuration file.
+///
+/// See [openstacksdk
+/// documentation](https://docs.openstack.org/openstacksdk/latest/user/guides/connect_from_config.html)
+/// for detailed information on the format of the configuration file.
+///
+/// The `cloud_name` argument is a name of the cloud entry to use.
+///
+/// Supported features are:
+/// 1. Password and HTTP basic authentication.
+/// 2. Users, projects and domains by name.
+/// 3. Region names.
+/// 4. Custom TLS CA certificates.
+/// 5. Profiles from `clouds-public.yaml`.
+/// 6. Credentials from `secure.yaml`.
+///
+/// A non-exhaustive list of features that are not currently supported:
+/// 1. Users, projects and domains by ID.
+/// 2. Adapter options, such as interfaces, default API versions and endpoint overrides.
+/// 3. Other authentication methods.
+/// 4. Identity v2.
 pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     let clouds = read_yaml("clouds.yaml", None)?;
     let clouds_public = read_yaml("clouds-public.yaml", Some("public-clouds"))?;
@@ -360,6 +380,16 @@ fn password_auth_from_env(
 }
 
 /// Create a `Session` from environment variables.
+///
+/// Understands the following variables:
+/// * `OS_CLOUD` (equivalent to calling [from_config](fn.from_config.html) with the given cloud).
+/// * `OS_AUTH_TYPE` (supports `password` and `http_basic`, defaults to `password`).
+/// * `OS_AUTH_URL` for `password`, `OS_ENDPOINT` for `http_basic`.
+/// * `OS_USERNAME` and `OS_PASSWORD`.
+/// * `OS_PROJECT_NAME` or `OS_PROJECT_ID`.
+/// * `OS_USER_DOMAIN_NAME` or `OS_USER_DOMAIN_ID` (defaults to `Default`).
+/// * `OS_PROJECT_DOMAIN_NAME` or `OS_PROJECT_DOMAIN_ID`.
+/// * `OS_REGION_NAME` and `OS_INTERFACE`.
 pub fn from_env() -> Result<Session, Error> {
     if let Ok(cloud_name) = env::var("OS_CLOUD") {
         return from_config(cloud_name);
