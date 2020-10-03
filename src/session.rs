@@ -27,6 +27,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
+use super::loading;
 use super::protocol::ServiceInfo;
 use super::request;
 use super::services::ServiceType;
@@ -67,6 +68,48 @@ impl Session {
         }
     }
 
+    /// Create a `Session` from a `clouds.yaml` configuration file.
+    ///
+    /// See [openstacksdk
+    /// documentation](https://docs.openstack.org/openstacksdk/latest/user/guides/connect_from_config.html)
+    /// for detailed information on the format of the configuration file.
+    ///
+    /// The `cloud_name` argument is a name of the cloud entry to use.
+    ///
+    /// Supported features are:
+    /// 1. Password and HTTP basic authentication.
+    /// 2. Users, projects and domains by name.
+    /// 3. Region names.
+    /// 4. Custom TLS CA certificates.
+    /// 5. Profiles from `clouds-public.yaml`.
+    /// 6. Credentials from `secure.yaml`.
+    ///
+    /// A non-exhaustive list of features that are not currently supported:
+    /// 1. Users, projects and domains by ID.
+    /// 2. Adapter options, such as interfaces, default API versions and endpoint overrides.
+    /// 3. Other authentication methods.
+    /// 4. Identity v2.
+    #[inline]
+    pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
+        loading::from_config(cloud_name)
+    }
+
+    /// Create a `Session` from environment variables.
+    ///
+    /// Understands the following variables:
+    /// * `OS_CLOUD` (equivalent to calling [from_config](#method.from_config) with the given cloud).
+    /// * `OS_AUTH_TYPE` (supports `password` and `http_basic`, defaults to `password`).
+    /// * `OS_AUTH_URL` for `password`, `OS_ENDPOINT` for `http_basic`.
+    /// * `OS_USERNAME` and `OS_PASSWORD`.
+    /// * `OS_PROJECT_NAME` or `OS_PROJECT_ID`.
+    /// * `OS_USER_DOMAIN_NAME` or `OS_USER_DOMAIN_ID` (defaults to `Default`).
+    /// * `OS_PROJECT_DOMAIN_NAME` or `OS_PROJECT_DOMAIN_ID`.
+    /// * `OS_REGION_NAME` and `OS_INTERFACE`.
+    #[inline]
+    pub fn from_env() -> Result<Session, Error> {
+        loading::from_env()
+    }
+
     /// Create an adapter for the specific service type.
     ///
     /// The new `Adapter` will share the same authentication and will initially use the same
@@ -76,8 +119,8 @@ impl Session {
     /// bit more efficient.
     ///
     /// ```rust,no_run
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let adapter = session.adapter(osauth::services::COMPUTE);
     /// ```
     #[inline]
@@ -94,8 +137,8 @@ impl Session {
     /// involve cloning internal structures.
     ///
     /// ```rust,no_run
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let adapter = session.into_adapter(osauth::services::COMPUTE);
     /// ```
     #[inline]
@@ -229,8 +272,8 @@ impl Session {
     ///
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let maybe_versions = session
     ///     .get_api_versions(osauth::services::COMPUTE)
     ///     .await?;
@@ -291,8 +334,8 @@ impl Session {
     ///
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let maybe_version = session
     ///     .pick_api_version(osauth::services::COMPUTE, candidates)
@@ -362,8 +405,8 @@ impl Session {
     ///
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let response = osauth::request::send_checked(
     ///     session
     ///         .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"], None)
@@ -442,8 +485,8 @@ impl Session {
     ///     pub servers: Vec<IdAndName>,
     /// }
     ///
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// let servers: ServersRoot = session
     ///     .get_json(osauth::services::COMPUTE, &["servers"], None)
@@ -513,8 +556,8 @@ impl Session {
     ///     }
     /// }
     ///
-    /// let session =
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// let servers = session
     ///     .get_json_paginated::<_, _, Server>(

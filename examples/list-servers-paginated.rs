@@ -51,8 +51,8 @@ async fn main() {
         .nth(1)
         .map(|s| FromStr::from_str(&s).expect("Expected a number"));
 
-    let session =
-        osauth::from_env().expect("Failed to create an identity provider from the environment");
+    let session = osauth::Session::from_env()
+        .expect("Failed to create an identity provider from the environment");
     let adapter = session.adapter(osauth::services::COMPUTE);
 
     let sstream = adapter

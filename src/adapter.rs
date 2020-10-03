@@ -20,7 +20,7 @@ use reqwest::{Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::config;
+use super::loading;
 use super::request;
 use super::services::ServiceType;
 #[cfg(feature = "stream")]
@@ -50,18 +50,20 @@ impl<Srv> Adapter<Srv> {
         Adapter::from_session(Session::new(auth_type), service)
     }
 
-    /// Create a new adapter from `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files.
+    /// Create a new adapter from a `clouds.yaml` configuration file.
+    ///
+    /// See [Session::from_config](struct.Session.html#method.from_config) for details.
     #[inline]
     pub fn from_config<S: AsRef<str>>(cloud_name: S, service: Srv) -> Result<Adapter<Srv>, Error> {
-        Ok(config::from_config(cloud_name)?.into_adapter(service))
+        Ok(loading::from_config(cloud_name)?.into_adapter(service))
     }
 
     /// Create a new adapter with information from environment variables.
     ///
-    /// Uses some of `OS_*` variables recognized by `python-openstackclient`.
+    /// See [Session::from_env](struct.Session.html#method.from_env) for details.
     #[inline]
     pub fn from_env(service: Srv) -> Result<Adapter<Srv>, Error> {
-        Ok(config::from_env()?.into_adapter(service))
+        Ok(loading::from_env()?.into_adapter(service))
     }
 
     /// Create a new adapter from a `Session`.
@@ -338,9 +340,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///     pub servers: Vec<Server>,
     /// }
     ///
-    /// let adapter = osauth::from_env()
-    ///     .expect("Failed to create an identity provider from the environment")
-    ///     .into_adapter(osauth::services::COMPUTE);
+    /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let servers: ServersRoot = adapter
     ///     .get_json(&["servers"], None)
     ///     .await?;
@@ -399,9 +400,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///     }
     /// }
     ///
-    /// let adapter = osauth::from_env()
-    ///     .expect("Failed to create an identity provider from the environment")
-    ///     .into_adapter(osauth::services::COMPUTE);
+    /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// let servers = adapter
     ///     .get_json_paginated::<_, Server>(&["servers"], None, None, None)

@@ -1,4 +1,4 @@
-// Copyright 2018 Dmitry Tantsur <divius.inside@gmail.com>
+// Copyright 2018-2020 Dmitry Tantsur <divius.inside@gmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,20 +15,17 @@
 //! Support for cloud configuration file.
 
 use std::collections::HashMap;
-use std::env;
-use std::fs::{self, File};
+use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use log::warn;
-use reqwest::{Certificate, Client};
+use reqwest::Client;
 use serde::Deserialize;
 
-use super::identity::{Password, Scope};
-use super::utils;
-use super::{BasicAuth, EndpointFilters, Error, ErrorKind, InterfaceType, Session};
-
-use crate::identity::IdOrName;
+use crate::identity::{IdOrName, Password, Scope};
+use crate::loading;
+use crate::utils;
+use crate::{BasicAuth, Error, ErrorKind, Session};
 
 #[derive(Debug, Deserialize)]
 struct Auth {
@@ -240,30 +237,6 @@ fn password_auth_from_cloud(
     Ok(Session::new(id))
 }
 
-#[inline]
-fn get_client(cacert: Option<String>) -> Result<Client, Error> {
-    let mut builder = Client::builder();
-    if let Some(cert_path) = cacert {
-        let cert_content = fs::read(&cert_path).map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidConfig,
-                format!("Cannot open cacert file {}: {}", cert_path, e),
-            )
-        })?;
-
-        let cert = Certificate::from_pem(&cert_content).map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidConfig,
-                format!("Cannot parse {} as PEM: {}", cert_path, e),
-            )
-        })?;
-
-        builder = builder.add_root_certificate(cert);
-    }
-
-    Ok(builder.build().expect("Cannot initialize HTTP backend"))
-}
-
 fn from_files(
     name: &str,
     mut clouds: serde_yaml::Mapping,
@@ -288,7 +261,7 @@ fn from_files(
         })?;
     let auth_type = cloud.auth_type.unwrap_or_else(|| "password".to_string());
 
-    let client = get_client(cloud.cacert)?;
+    let client = loading::get_client(cloud.cacert)?;
 
     match auth_type.as_str() {
         "password" => password_auth_from_cloud(client, cloud.auth, cloud.region_name),
@@ -316,26 +289,6 @@ fn from_files(
 }
 
 /// Create a `Session` from a `clouds.yaml` configuration file.
-///
-/// See [openstacksdk
-/// documentation](https://docs.openstack.org/openstacksdk/latest/user/guides/connect_from_config.html)
-/// for detailed information on the format of the configuration file.
-///
-/// The `cloud_name` argument is a name of the cloud entry to use.
-///
-/// Supported features are:
-/// 1. Password and HTTP basic authentication.
-/// 2. Users, projects and domains by name.
-/// 3. Region names.
-/// 4. Custom TLS CA certificates.
-/// 5. Profiles from `clouds-public.yaml`.
-/// 6. Credentials from `secure.yaml`.
-///
-/// A non-exhaustive list of features that are not currently supported:
-/// 1. Users, projects and domains by ID.
-/// 2. Adapter options, such as interfaces, default API versions and endpoint overrides.
-/// 3. Other authentication methods.
-/// 4. Identity v2.
 pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     let clouds = read_yaml("clouds.yaml", None)?;
     let clouds_public = read_yaml("clouds-public.yaml", Some("public-clouds"))?;
@@ -344,82 +297,11 @@ pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
     from_files(cloud_name.as_ref(), clouds, clouds_public, secure)
 }
 
-fn password_auth_from_env(
-    client: Client,
-    user_name: String,
-    password: String,
-) -> Result<Session, Error> {
-    let auth_url = utils::require_env("OS_AUTH_URL")?;
-    let user_domain = env::var("OS_USER_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
-
-    let id = Password::new_with_client(&auth_url, client, user_name, password, user_domain)?;
-
-    let project = utils::require_env("OS_PROJECT_ID")
-        .map(IdOrName::Id)
-        .or_else(|_| utils::require_env("OS_PROJECT_NAME").map(IdOrName::Name))?;
-
-    let project_domain = utils::require_env("OS_PROJECT_DOMAIN_ID")
-        .map(IdOrName::Id)
-        .or_else(|_| utils::require_env("OS_PROJECT_DOMAIN_NAME").map(IdOrName::Name))
-        .ok();
-
-    let mut session = Session::new(id.with_project_scope(project, project_domain));
-    let mut filters = EndpointFilters::default();
-
-    if let Ok(interface) = env::var("OS_INTERFACE") {
-        filters.set_interfaces(InterfaceType::from_str(&interface)?);
-    }
-
-    if let Ok(region) = env::var("OS_REGION_NAME") {
-        filters.region = Some(region);
-    }
-
-    *session.endpoint_filters_mut() = filters;
-
-    Ok(session)
-}
-
-/// Create a `Session` from environment variables.
-///
-/// Understands the following variables:
-/// * `OS_CLOUD` (equivalent to calling [from_config](fn.from_config.html) with the given cloud).
-/// * `OS_AUTH_TYPE` (supports `password` and `http_basic`, defaults to `password`).
-/// * `OS_AUTH_URL` for `password`, `OS_ENDPOINT` for `http_basic`.
-/// * `OS_USERNAME` and `OS_PASSWORD`.
-/// * `OS_PROJECT_NAME` or `OS_PROJECT_ID`.
-/// * `OS_USER_DOMAIN_NAME` or `OS_USER_DOMAIN_ID` (defaults to `Default`).
-/// * `OS_PROJECT_DOMAIN_NAME` or `OS_PROJECT_DOMAIN_ID`.
-/// * `OS_REGION_NAME` and `OS_INTERFACE`.
-pub fn from_env() -> Result<Session, Error> {
-    if let Ok(cloud_name) = env::var("OS_CLOUD") {
-        return from_config(cloud_name);
-    }
-
-    let user_name = utils::require_env("OS_USERNAME")?;
-    let password = utils::require_env("OS_PASSWORD")?;
-    let auth_type = env::var("OS_AUTH_TYPE").unwrap_or_else(|_| "password".to_string());
-
-    let client = get_client(env::var("OS_CACERT").ok())?;
-
-    match auth_type.as_str() {
-        "password" => password_auth_from_env(client, user_name, password),
-        "http_basic" => {
-            let endpoint = utils::require_env("OS_ENDPOINT")?;
-            let id = BasicAuth::new_with_client(&endpoint, client, user_name, password)?;
-            Ok(Session::new(id))
-        }
-        _ => Err(Error::new(
-            ErrorKind::InvalidInput,
-            format!("Unsupported authentication type: {}", auth_type),
-        )),
-    }
-}
-
 #[cfg(test)]
 pub mod test {
-    use super::super::utils::test::to_yaml;
-    use super::super::ErrorKind;
     use super::{find_config, from_files, inject_profiles, read_yaml, with_one_key};
+    use crate::utils::test::to_yaml;
+    use crate::ErrorKind;
 
     use std::io::Write;
 

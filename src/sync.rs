@@ -103,6 +103,22 @@ impl SyncSession {
         }
     }
 
+    /// Create a `SyncSession` from a `clouds.yaml` configuration file.
+    ///
+    /// See [Session::from_config](../struct.Session.html#method.from_config) for details.
+    #[inline]
+    pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<SyncSession> {
+        Ok(Self::new(Session::from_config(cloud_name)?))
+    }
+
+    /// Create a `SyncSession` from environment variables.
+    ///
+    /// See [Session::from_env](../struct.Session.html#method.from_env) for details.
+    #[inline]
+    pub fn from_env() -> Result<SyncSession> {
+        Ok(Self::new(Session::from_env()?))
+    }
+
     /// Get a reference to the authentication type in use.
     #[inline]
     pub fn auth_type(&self) -> &dyn AuthType {
@@ -181,9 +197,8 @@ impl SyncSession {
     /// that microversioning is not supported.
     ///
     /// ```rust,no_run
-    /// let session = osauth::sync::SyncSession::new(
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment")
-    /// );
+    /// let session = osauth::sync::SyncSession::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let maybe_versions = session
     ///     .get_api_versions(osauth::services::COMPUTE)
     ///     .expect("Cannot determine supported API versions");
@@ -232,9 +247,8 @@ impl SyncSession {
     /// Returns `None` if none of the requested versions are available.
     ///
     /// ```rust,no_run
-    /// let session = osauth::sync::SyncSession::new(
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment")
-    /// );
+    /// let session = osauth::sync::SyncSession::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let maybe_version = session
     ///     .pick_api_version(osauth::services::COMPUTE, candidates)
@@ -284,9 +298,8 @@ impl SyncSession {
     /// ```rust,no_run
     /// use reqwest::Method;
     ///
-    /// let session = osauth::sync::SyncSession::new(
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment")
-    /// );
+    /// let session = osauth::sync::SyncSession::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     /// session
     ///     .request(osauth::services::COMPUTE, Method::HEAD, &["servers", "1234"], None)
     ///     .and_then(|builder| session.send_checked(builder))
@@ -343,9 +356,8 @@ impl SyncSession {
     ///     pub servers: Vec<IdAndName>,
     /// }
     ///
-    /// let session = osauth::sync::SyncSession::new(
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment")
-    /// );
+    /// let session = osauth::sync::SyncSession::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// session
     ///     .get_json(osauth::services::COMPUTE, &["servers"], None)
@@ -430,9 +442,8 @@ impl SyncSession {
     /// ```rust,no_run
     /// use std::io::Read;
     ///
-    /// let session = osauth::sync::SyncSession::new(
-    ///     osauth::from_env().expect("Failed to create an identity provider from the environment")
-    /// );
+    /// let session = osauth::sync::SyncSession::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// session
     ///     .get(osauth::services::OBJECT_STORAGE, &["test-container", "test-object"], None)

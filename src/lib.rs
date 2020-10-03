@@ -43,11 +43,10 @@
 //!   services without authentication.
 //! * Using HTTP [BasicAuth](struct.BasicAuth.html) authentication type for services supporting it
 //!   (only ironic and ironic-inspector at the moment).
-//!
-//! A `Session` can be created directly by loading it:
-//! * From the `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files using
-//!   [from_config](fn.from_config.html).
-//! * From environment variables using [from_env](fn.from_env.html).
+//! * By loading both authentication parameters and a session from:
+//!   * `clouds.yaml`, `clouds-public.yaml` and `secure.yaml` configuration files using
+//!     [from_config](struct.Session.html#method.from_config).
+//!   * environment variables using [from_env](struct.Session.html#method.from_env).
 //!
 //! See [Session](struct.Session.html) documentation for the details on using a `Session` for making
 //! OpenStack calls.
@@ -97,10 +96,10 @@ mod adapter;
 mod apiversion;
 mod auth;
 mod basic;
-mod config;
 mod endpointfilters;
 mod error;
 pub mod identity;
+mod loading;
 mod protocol;
 pub mod request;
 pub mod services;
@@ -116,7 +115,9 @@ pub use crate::adapter::Adapter;
 pub use crate::apiversion::ApiVersion;
 pub use crate::auth::{AuthType, NoAuth};
 pub use crate::basic::BasicAuth;
-pub use crate::config::{from_config, from_env};
 pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces};
 pub use crate::error::{Error, ErrorKind};
+#[deprecated(since = "0.3.3", note = "use osauth::Session::from_env/config")]
+#[doc(hidden)]
+pub use crate::loading::{from_config, from_env};
 pub use crate::session::Session;

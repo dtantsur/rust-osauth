@@ -98,8 +98,8 @@ where
 /// An example:
 ///
 /// ```rust,no_run
-/// let session =
-///     osauth::from_env().expect("Failed to create an identity provider from the environment");
+/// let session = osauth::Session::from_env()
+///     .expect("Failed to create an identity provider from the environment");
 /// let future = session.get(osauth::services::OBJECT_STORAGE, osauth::request::NO_PATH, None);
 /// ```
 pub const NO_PATH: Option<&'static str> = None;

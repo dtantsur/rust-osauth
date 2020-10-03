@@ -28,8 +28,8 @@ pub struct ServersRoot {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let session =
-        osauth::from_env().expect("Failed to create an identity provider from the environment");
+    let session = osauth::Session::from_env()
+        .expect("Failed to create an identity provider from the environment");
 
     let servers: ServersRoot = session
         .get_json(osauth::services::COMPUTE, &["servers"], None)
