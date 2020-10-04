@@ -14,16 +14,21 @@
 
 //! Support for loading sessions from external input.
 
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
 use std::fs;
 
-use reqwest::{Certificate, Client};
+#[cfg(any(feature = "native-tls", feature = "rustls"))]
+use reqwest::Certificate;
+use reqwest::Client;
 
 use crate::{Error, ErrorKind};
 
 /// Create an HTTP client with the provided CA certificate.
 #[inline]
+#[allow(unused_mut)] // mut builder unused with --no-default-features
 fn get_client(cacert: Option<String>) -> Result<Client, Error> {
     let mut builder = Client::builder();
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     if let Some(cert_path) = cacert {
         let cert_content = fs::read(&cert_path).map_err(|e| {
             Error::new(
@@ -40,6 +45,14 @@ fn get_client(cacert: Option<String>) -> Result<Client, Error> {
         })?;
 
         builder = builder.add_root_certificate(cert);
+    }
+
+    #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
+    if cacert.is_some() {
+        return Err(Error::new(
+            ErrorKind::InvalidConfig,
+            "TLS support is disabled",
+        ));
     }
 
     Ok(builder.build().expect("Cannot initialize HTTP backend"))

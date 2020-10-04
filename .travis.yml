@@ -11,5 +11,7 @@ jobs:
       name: "Check clippy warnings (non-voting)"
     - script: cargo test --verbose
       name: "Run unit tests"
+    - script: cargo test --verbose --no-default-features
+      name: "Run unit tests without default features"
     - script: cargo doc --verbose
       name: "Build documentation"

@@ -303,6 +303,7 @@ pub mod test {
     use crate::utils::test::to_yaml;
     use crate::ErrorKind;
 
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     use std::io::Write;
 
     #[test]
@@ -376,6 +377,7 @@ pub mod test {
     }
 
     #[test]
+    #[cfg(any(feature = "native-tls", feature = "rustls"))]
     fn test_from_config_cacert() {
         let mut cacert = tempfile::NamedTempFile::new().unwrap();
         write!(
@@ -436,7 +438,11 @@ hK9jLBzNvo8qzKqaGfnGieuLeXCqFDA=
         )
         .err()
         .unwrap();
-        assert!(e.to_string().contains("Cannot open cacert file"));
+        if cfg!(any(feature = "native-tls", feature = "rustls")) {
+            assert!(e.to_string().contains("Cannot open cacert file"));
+        } else {
+            assert!(e.to_string().contains("TLS support is disabled"));
+        }
     }
 
     #[test]

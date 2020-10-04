@@ -50,3 +50,7 @@ path = "src/lib.rs"
 
 [badges]
 travis-ci = { repository = "dtantsur/rust-osauth" }
+
+[[example]]
+name = "list-servers-paginated"
+required-features = ["stream"]
