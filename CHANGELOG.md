@@ -1,5 +1,18 @@
 # Change Log
 
+## 0.3.3  (2020-10-11)
+
+#### Bug Fixes
+
+*   repair and gate on the support for no-default-features ([cbb1078b](https://github.com/dtantsur/rust-osauth/commit/cbb1078b0a5f5a7d197393addc2743dccf9dd836))
+
+#### Features
+
+*   from_config/from_env directly on Session/SyncSession ([b033b37e](https://github.com/dtantsur/rust-osauth/commit/b033b37ef56b44bea221ede509547073de080781))
+* **auth:**  suppor HTTP basic auth (for ironic) ([2cad612e](https://github.com/dtantsur/rust-osauth/commit/2cad612e206528c28e65c59fc6a906c0e290c76d))
+* **config:**  support custom CA certificates ([a0efa046](https://github.com/dtantsur/rust-osauth/commit/a0efa046362519431464b2e20ca8451cfee32424))
+* **session:**  support for endpoint overrides ([958a1330](https://github.com/dtantsur/rust-osauth/commit/958a133039d745655e7a4e90d862f2c1397576e4))
+
 ## 0.3.2 (2020-09-06)
 
 #### Bug Fixes
