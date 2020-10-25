@@ -2,6 +2,7 @@ language: rust
 jobs:
   allow_failures:
     - script: cargo clippy --verbose --package osauth -- -D warnings
+    - rust: nightly
   include:
     - install: rustup component add rustfmt
       script: cargo fmt -- --check
@@ -13,5 +14,14 @@ jobs:
       name: "Run unit tests"
     - script: cargo test --verbose --no-default-features
       name: "Run unit tests without default features"
+    - script: cargo test --verbose
+      name: "Run unit tests on MSRV"
+      rust: 1.45.0
+    - script: cargo test --verbose --no-default-features
+      name: "Run unit tests without default features on MSRV"
+      rust: 1.43.0
+    - script: cargo test --verbose
+      name: "Run unit tests on nightly"
+      rust: nightly
     - script: cargo doc --verbose
       name: "Build documentation"

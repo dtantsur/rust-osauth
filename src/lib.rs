@@ -32,7 +32,8 @@
 //!
 //! # Requirements
 //!
-//! This crate requires Rust 2018 edition and compiler version 1.40.0 or newer.
+//! This crate requires Rust 2018 edition and rustc version 1.43.0 or newer; the `stream` feature
+//! requires rustc 1.45.0.
 //!
 //! # Usage
 //!
@@ -56,6 +57,16 @@
 //! [Adapter::new](struct.Adapter.html#method.new) or from an existing `Session` using
 //! [Session::adapter](struct.Session.html#method.adapter) or
 //! [Session::into_adapter](struct.Session.html#method.into_adapter).
+//!
+//! # Features
+//!
+//! * `native-tls` or `rustls` add TLS support with two alternative implementations, `native-tls`
+//!   is enabled by default.
+//! * `stream` adds [get_json_paginated](struct.Session.html#method.get_json_paginated) and
+//!   [get_json_query_paginated](struct.Session.html#method.get_json_query_paginated) to `Session`
+//!   and `Adapter`; enabled by default.
+//! * `sync` adds a [synchronous wrapper](sync/struct.SyncSession.html) around the `Session`;
+//!   enabled by default.
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]
