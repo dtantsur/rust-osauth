@@ -38,7 +38,7 @@ pub enum InterfaceType {
 }
 
 /// A list of acceptable interface types.
-#[derive(Debug, Clone, Copy, Eq)]
+#[derive(Clone, Copy, Eq)]
 pub struct ValidInterfaces {
     items: [InterfaceType; 3],
     len: u8,
@@ -80,6 +80,15 @@ where
         } else {
             false
         }
+    }
+}
+
+impl fmt::Debug for ValidInterfaces {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ValidInterfaces ")?;
+        f.debug_list()
+            .entries(&self.items[..self.len as usize])
+            .finish()
     }
 }
 
@@ -506,6 +515,7 @@ pub mod test {
             empty.iter().collect::<ValidInterfaces>(),
             ValidInterfaces::empty()
         );
+        assert_eq!("ValidInterfaces []", format!("{:?}", empty).as_str());
         let v: Vec<InterfaceType> = Vec::new();
         assert_eq!(
             v.into_iter().collect::<ValidInterfaces>(),
@@ -520,6 +530,10 @@ pub mod test {
         assert_eq!(*default, [Public]);
         assert!(default.contains(&Public));
         assert!(!default.contains(&Internal));
+        assert_eq!(
+            "ValidInterfaces [Public]",
+            format!("{:?}", default).as_str()
+        );
     }
 
     #[test]
@@ -528,6 +542,10 @@ pub mod test {
         assert_eq!(default.len(), 1);
         assert_eq!(*default, [Internal]);
         assert!(!default.contains(&Public));
+        assert_eq!(
+            "ValidInterfaces [Internal]",
+            format!("{:?}", default).as_str()
+        );
     }
 
     #[test]
@@ -540,6 +558,10 @@ pub mod test {
         assert_eq!(vi.len(), 2);
         assert!(vi.push(Internal));
         assert_eq!(*vi, [Public, Admin, Internal]);
+        assert_eq!(
+            "ValidInterfaces [Public, Admin, Internal]",
+            format!("{:?}", vi).as_str()
+        );
     }
 
     fn get_hash(value: &ValidInterfaces) -> u64 {
