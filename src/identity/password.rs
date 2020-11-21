@@ -12,72 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Authentication using Identity API v3.
-//!
-//! Currently only supports [Password](struct.Password.html) authentication.
-//! Identity API v2 is not and will not be supported.
-
-use std::collections::hash_map::DefaultHasher;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
+//! Password authentication.
 
 use async_trait::async_trait;
-use chrono::{Duration, Local};
-use log::{debug, error, trace};
 use osproto::identity as protocol;
-use reqwest::{Client, IntoUrl, Method, RequestBuilder, Response, Url};
-use tokio::sync::RwLock;
+use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 
-use super::{request, AuthType, EndpointFilters, Error, ErrorKind, InterfaceType, ValidInterfaces};
-
-pub use osproto::identity::IdOrName;
-
-const MISSING_SUBJECT_HEADER: &str = "Missing X-Subject-Token header";
-const INVALID_SUBJECT_HEADER: &str = "Invalid X-Subject-Token header";
-// Required validity time in minutes. Here we refresh the token if it expires
-// in 10 minutes or less.
-const TOKEN_MIN_VALIDITY: i64 = 10;
-
-/// A scope of a token.
-///
-/// Only project scopes are currently supported.
-#[derive(Debug)]
-pub enum Scope {
-    /// A token scoped to a project.
-    Project {
-        /// Project ID or name.
-        project: IdOrName,
-        /// ID or name of the project domain.
-        domain: Option<IdOrName>,
-    },
-}
-
-/// Plain authentication token without additional details.
-#[derive(Clone)]
-struct Token {
-    value: String,
-    body: protocol::Token,
-}
-
-impl fmt::Debug for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut hasher = DefaultHasher::new();
-        self.value.hash(&mut hasher);
-        write!(
-            f,
-            "Token {{ value: hash({}), body: {:?} }}",
-            hasher.finish(),
-            self.body
-        )
-    }
-}
-
-/// Generic trait for authentication using Identity API V3.
-pub trait Identity {
-    /// Get a reference to the auth URL.
-    fn auth_url(&self) -> &Url;
-}
+use super::internal::Internal;
+use super::{IdOrName, Identity, Scope};
+use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 
 /// Password authentication using Identity API V3.
 ///
@@ -155,32 +98,14 @@ pub trait Identity {
 /// The authentication token is cached while it's still valid or until
 /// [refresh](../trait.AuthType.html#tymethod.refresh) is called.
 /// Clones of a `Password` also start with an empty cache.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Password {
-    client: Client,
-    auth_url: Url,
-    body: protocol::AuthRoot,
-    token_endpoint: String,
-    cached_token: RwLock<Option<Token>>,
-    filters: EndpointFilters,
-}
-
-impl Clone for Password {
-    fn clone(&self) -> Password {
-        Password {
-            client: self.client.clone(),
-            auth_url: self.auth_url.clone(),
-            body: self.body.clone(),
-            token_endpoint: self.token_endpoint.clone(),
-            cached_token: RwLock::new(None),
-            filters: self.filters.clone(),
-        }
-    }
+    inner: Internal,
 }
 
 impl Identity for Password {
     fn auth_url(&self) -> &Url {
-        &self.auth_url
+        self.inner.auth_url()
     }
 }
 
@@ -221,18 +146,7 @@ impl Password {
         S2: Into<String>,
         S3: Into<String>,
     {
-        let mut url = auth_url.into_url()?;
-
-        let _ = url
-            .path_segments_mut()
-            .map_err(|_| Error::new(ErrorKind::InvalidConfig, "Invalid auth_url: wrong schema?"))?
-            .pop_if_empty();
-
-        let token_endpoint = if url.as_str().ends_with("/v3") {
-            format!("{}/auth/tokens", url)
-        } else {
-            format!("{}/v3/auth/tokens", url)
-        };
+        let auth_url = auth_url.into_url()?;
 
         let pw = protocol::UserAndPassword {
             user: protocol::IdOrName::Name(user_name.into()),
@@ -246,36 +160,31 @@ impl Password {
             },
         };
         Ok(Password {
-            client,
-            auth_url: url,
-            body,
-            token_endpoint,
-            cached_token: RwLock::new(None),
-            filters: EndpointFilters::default(),
+            inner: Internal::new(client, auth_url, body)?,
         })
     }
 
     /// Endpoint filters.
     #[inline]
     pub fn endpoint_filters(&self) -> &EndpointFilters {
-        &self.filters
+        &self.inner.filters
     }
 
     /// Mutable endpoint filters.
     #[inline]
     pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
-        &mut self.filters
+        &mut self.inner.filters
     }
 
     /// Set the default endpoint interface to use.
     pub fn set_default_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
-        self.filters.interfaces = ValidInterfaces::one(endpoint_interface);
+        self.inner.filters.interfaces = ValidInterfaces::one(endpoint_interface);
     }
 
     /// Set endpoint filters.
     #[inline]
     pub fn set_endpoint_filters(&mut self, filters: EndpointFilters) {
-        self.filters = filters;
+        self.inner.filters = filters;
     }
 
     /// Set a region for this authentication method.
@@ -284,7 +193,7 @@ impl Password {
     where
         S: Into<String>,
     {
-        self.filters.region = Some(region.into());
+        self.inner.filters.region = Some(region.into());
     }
 
     /// Scope authentication to the given project.
@@ -301,12 +210,9 @@ impl Password {
     /// Add a scope to the authentication.
     ///
     /// This is required in the most cases.
+    #[inline]
     pub fn set_scope(&mut self, scope: Scope) {
-        self.body.auth.scope = Some(match scope {
-            Scope::Project { project, domain } => {
-                protocol::Scope::Project(protocol::Project { project, domain })
-            }
-        });
+        self.inner.set_scope(scope);
     }
 
     /// Convert this authentication into one using the given endpoint interface.
@@ -319,7 +225,7 @@ impl Password {
     /// Add endpoint filters.
     #[inline]
     pub fn with_endpoint_filters(mut self, filters: EndpointFilters) -> Self {
-        self.filters = filters;
+        self.inner.filters = filters;
         self
     }
 
@@ -342,7 +248,7 @@ impl Password {
     where
         S: Into<String>,
     {
-        self.filters.region = Some(region.into());
+        self.inner.filters.region = Some(region.into());
         self
     }
 
@@ -353,71 +259,16 @@ impl Password {
         self
     }
 
-    async fn do_refresh(&self, force: bool) -> Result<(), Error> {
-        // This is executed every request at least once, so it's important to start with a read
-        // lock. We expect to hit this branch most of the time.
-        if !force && token_alive(&self.cached_token.read().await) {
-            return Ok(());
-        }
-
-        let mut lock = self.cached_token.write().await;
-        // Additonal check in case another thread has updated the token while we were waiting for
-        // the write lock.
-        if token_alive(&lock) {
-            return Ok(());
-        }
-
-        let resp = self
-            .client
-            .post(&self.token_endpoint)
-            .json(&self.body)
-            .send()
-            .await?;
-        *lock = Some(token_from_response(request::check(resp).await?).await?);
-        Ok(())
-    }
-
     /// User name or ID.
     #[inline]
     pub fn user(&self) -> &IdOrName {
-        match self.body.auth.identity {
-            protocol::Identity::Password(ref pw) => &pw.user,
-            _ => unreachable!(),
-        }
+        self.inner.user().expect("Password auth without a user")
     }
 
     /// Project name or ID (if project scoped).
     #[inline]
     pub fn project(&self) -> Option<&IdOrName> {
-        match self.body.auth.scope {
-            Some(protocol::Scope::Project(ref prj)) => Some(&prj.project),
-            _ => None,
-        }
-    }
-
-    #[inline]
-    async fn get_token(&self) -> Result<String, Error> {
-        self.do_refresh(false).await?;
-        // unwrap is safe because do_refresh unconditionally populates the token
-        Ok(self
-            .cached_token
-            .read()
-            .await
-            .as_ref()
-            .unwrap()
-            .value
-            .clone())
-    }
-}
-
-#[inline]
-fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
-    if let Some(value) = token.deref() {
-        let validity_time_left = value.body.expires_at.signed_duration_since(Local::now());
-        trace!("Token is valid for {:?}", validity_time_left);
-        validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
-    } else {
-        false
+        self.inner.project()
     }
 }
 
@@ -425,16 +276,12 @@ fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
 impl AuthType for Password {
     /// Endpoint filters in use.
     fn default_filters(&self) -> Option<&EndpointFilters> {
-        Some(&self.filters)
+        Some(&self.inner.filters)
     }
 
     /// Create an authenticated request.
     async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
-        let token = self.get_token().await?;
-        Ok(self
-            .client
-            .request(method, url)
-            .header("x-auth-token", token))
+        self.inner.request(method, url).await
     }
 
     /// Get a URL for the requested service.
@@ -443,63 +290,21 @@ impl AuthType for Password {
         service_type: String,
         filters: EndpointFilters,
     ) -> Result<Url, Error> {
-        let real_filters = filters.with_defaults(&self.filters);
-        debug!(
-            "Requesting a catalog endpoint for service '{}', filters {:?}",
-            service_type, real_filters
-        );
-        self.do_refresh(false).await?;
-        let lock = self.cached_token.read().await;
-        // unwrap is safe because do_refresh unconditionally populates the token
-        real_filters.find_in_catalog(&lock.as_ref().unwrap().body.catalog, &service_type)
+        self.inner.get_endpoint(service_type, filters).await
     }
 
     /// Refresh the cached token and service catalog.
     async fn refresh(&self) -> Result<(), Error> {
-        self.do_refresh(true).await
+        self.inner.refresh(true).await
     }
-}
-
-async fn token_from_response(resp: Response) -> Result<Token, Error> {
-    let value = match resp.headers().get("x-subject-token") {
-        Some(hdr) => match hdr.to_str() {
-            Ok(s) => Ok(s.to_string()),
-            Err(e) => {
-                error!(
-                    "Invalid X-Subject-Token {:?} received from {}: {}",
-                    hdr,
-                    resp.url(),
-                    e
-                );
-                Err(Error::new(
-                    ErrorKind::InvalidResponse,
-                    INVALID_SUBJECT_HEADER,
-                ))
-            }
-        },
-        None => {
-            error!("No X-Subject-Token header received from {}", resp.url());
-            Err(Error::new(
-                ErrorKind::InvalidResponse,
-                MISSING_SUBJECT_HEADER,
-            ))
-        }
-    }?;
-
-    let root = resp.json::<protocol::TokenRoot>().await?;
-    debug!("Received a token expiring at {}", root.token.expires_at);
-    trace!("Received catalog: {:?}", root.token.catalog);
-    Ok(Token {
-        value,
-        body: root.token,
-    })
 }
 
 #[cfg(test)]
 pub mod test {
     #![allow(unused_results)]
 
-    use super::{IdOrName, Identity, Password};
+    use super::Password;
+    use crate::identity::{IdOrName, Identity};
 
     #[test]
     fn test_identity_new() {
@@ -539,7 +344,7 @@ pub mod test {
             Some(&IdOrName::Name("cool project".to_string()))
         );
         assert_eq!(
-            &id.token_endpoint,
+            id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
         assert_eq!(id.endpoint_filters().region, None);
@@ -565,7 +370,7 @@ pub mod test {
             Some(&IdOrName::Name("cool project".to_string()))
         );
         assert_eq!(
-            &id.token_endpoint,
+            id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
         assert_eq!(id.endpoint_filters().region, None);
@@ -594,7 +399,7 @@ pub mod test {
             Some(&IdOrName::Name("cool project".to_string()))
         );
         assert_eq!(
-            &id.token_endpoint,
+            id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
         assert_eq!(id.endpoint_filters().region, None);
@@ -623,7 +428,7 @@ pub mod test {
             Some(&IdOrName::Name("cool project".to_string()))
         );
         assert_eq!(
-            &id.token_endpoint,
+            id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
         assert_eq!(id.endpoint_filters().region, None);
