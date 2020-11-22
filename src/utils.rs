@@ -12,19 +12,7 @@
 
 //! Internal utilities
 
-use std::env;
-
 use log::warn;
-
-use super::{Error, ErrorKind};
-
-const MISSING_ENV_VARS: &str = "Not all required environment variables were provided";
-
-/// Get a required environment variable.
-#[inline]
-pub fn require_env(name: &str) -> Result<String, Error> {
-    env::var(name).map_err(|_| Error::new(ErrorKind::InvalidInput, MISSING_ENV_VARS))
-}
 
 /// Merge two nested serde_yaml::Mapping structs.
 ///

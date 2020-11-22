@@ -19,12 +19,14 @@
 
 mod internal;
 mod password;
+mod token;
 
 use reqwest::Url;
 
 pub use osproto::identity::IdOrName;
 
 pub use self::password::Password;
+pub use self::token::Token;
 
 const MISSING_SUBJECT_HEADER: &str = "Missing X-Subject-Token header";
 const INVALID_SUBJECT_HEADER: &str = "Invalid X-Subject-Token header";

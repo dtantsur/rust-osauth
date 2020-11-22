@@ -96,14 +96,17 @@ impl Session {
 
     /// Create a `Session` from environment variables.
     ///
+    /// Supports the following authentication types: `password`, `v3token`, `http_basic` and `noop`.
+    ///
     /// Understands the following variables:
     /// * `OS_CLOUD` (equivalent to calling [from_config](#method.from_config) with the given cloud).
-    /// * `OS_AUTH_TYPE` (supports `password` and `http_basic`, defaults to `password`).
-    /// * `OS_AUTH_URL` for `password`, `OS_ENDPOINT` for `http_basic`.
+    /// * `OS_AUTH_TYPE` (defaults to `v3token` if `OS_TOKEN` is provided otherwise to `password`).
+    /// * `OS_AUTH_URL` for `password` and `v3token`, `OS_ENDPOINT` for `http_basic` and `noop`.
     /// * `OS_USERNAME` and `OS_PASSWORD`.
     /// * `OS_PROJECT_NAME` or `OS_PROJECT_ID`.
     /// * `OS_USER_DOMAIN_NAME` or `OS_USER_DOMAIN_ID` (defaults to `Default`).
     /// * `OS_PROJECT_DOMAIN_NAME` or `OS_PROJECT_DOMAIN_ID`.
+    /// * `OS_TOKEN` (for `v3token`).
     /// * `OS_REGION_NAME` and `OS_INTERFACE`.
     #[inline]
     pub fn from_env() -> Result<Session, Error> {

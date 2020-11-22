@@ -17,70 +17,241 @@
 use std::env;
 use std::str::FromStr;
 
-use reqwest::Client;
-
-use crate::identity::{IdOrName, Password};
+use crate::identity::{IdOrName, Password, Scope, Token};
 use crate::loading;
-use crate::utils;
-use crate::{BasicAuth, EndpointFilters, Error, ErrorKind, InterfaceType, Session};
+use crate::{
+    AuthType, BasicAuth, EndpointFilters, Error, ErrorKind, InterfaceType, NoAuth, Session,
+};
 
-fn password_auth_from_env(
-    client: Client,
-    user_name: String,
-    password: String,
-) -> Result<Session, Error> {
-    let auth_url = utils::require_env("OS_AUTH_URL")?;
-    let user_domain = env::var("OS_USER_DOMAIN_NAME").unwrap_or_else(|_| String::from("Default"));
+// This is only used for unit testing.
+trait Environment {
+    fn get(&self, name: &'static str) -> Result<String, Error>;
+}
 
-    let id = Password::new_with_client(&auth_url, client, user_name, password, user_domain)?;
+#[derive(Debug, Clone, Copy)]
+struct RealEnvironment;
 
-    let project = utils::require_env("OS_PROJECT_ID")
-        .map(IdOrName::Id)
-        .or_else(|_| utils::require_env("OS_PROJECT_NAME").map(IdOrName::Name))?;
+impl Environment for RealEnvironment {
+    fn get(&self, name: &'static str) -> Result<String, Error> {
+        env::var(name).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                format!("Required environment variable {} is not provided", name),
+            )
+        })
+    }
+}
 
-    let project_domain = utils::require_env("OS_PROJECT_DOMAIN_ID")
-        .map(IdOrName::Id)
-        .or_else(|_| utils::require_env("OS_PROJECT_DOMAIN_NAME").map(IdOrName::Name))
-        .ok();
-
-    let mut session = Session::new(id.with_project_scope(project, project_domain));
+#[inline]
+fn create_session<T, E>(auth: T, env: E) -> Result<Session, Error>
+where
+    T: AuthType + 'static,
+    E: Environment,
+{
     let mut filters = EndpointFilters::default();
 
-    if let Ok(interface) = env::var("OS_INTERFACE") {
+    if let Ok(interface) = env.get("OS_INTERFACE") {
         filters.set_interfaces(InterfaceType::from_str(&interface)?);
     }
 
-    if let Ok(region) = env::var("OS_REGION_NAME") {
+    if let Ok(region) = env.get("OS_REGION_NAME") {
         filters.region = Some(region);
     }
 
-    *session.endpoint_filters_mut() = filters;
-
-    Ok(session)
+    Ok(Session::new(auth).with_endpoint_filters(filters))
 }
 
-/// Create a `Session` from environment variables.
-pub fn from_env() -> Result<Session, Error> {
-    if let Ok(cloud_name) = env::var("OS_CLOUD") {
+#[inline]
+fn _from_env<E: Environment>(env: E) -> Result<Session, Error> {
+    if let Ok(cloud_name) = env.get("OS_CLOUD") {
         return loading::from_config(cloud_name);
     }
 
-    let user_name = utils::require_env("OS_USERNAME")?;
-    let password = utils::require_env("OS_PASSWORD")?;
-    let auth_type = env::var("OS_AUTH_TYPE").unwrap_or_else(|_| "password".to_string());
+    let auth_type = env.get("OS_AUTH_TYPE").unwrap_or_else(|_| {
+        if env.get("OS_TOKEN").is_ok() {
+            "v3token".to_string()
+        } else {
+            "password".to_string()
+        }
+    });
 
-    let client = loading::get_client(env::var("OS_CACERT").ok())?;
+    let client = loading::get_client(env.get("OS_CACERT").ok())?;
+
+    if auth_type == "none" {
+        let endpoint = env.get("OS_ENDPOINT")?;
+        let id = NoAuth::new_with_client(&endpoint, client)?;
+        return Ok(Session::new(id));
+    }
+
+    if auth_type == "http_basic" {
+        let endpoint = env.get("OS_ENDPOINT")?;
+        let user_name = env.get("OS_USERNAME")?;
+        let password = env.get("OS_PASSWORD")?;
+        let id = BasicAuth::new_with_client(&endpoint, client, user_name, password)?;
+        return Ok(Session::new(id));
+    }
+
+    let auth_url = env.get("OS_AUTH_URL")?;
+    let project = env
+        .get("OS_PROJECT_ID")
+        .map(IdOrName::Id)
+        .or_else(|_| env.get("OS_PROJECT_NAME").map(IdOrName::Name))?;
+
+    let project_domain = env
+        .get("OS_PROJECT_DOMAIN_ID")
+        .map(IdOrName::Id)
+        .or_else(|_| env.get("OS_PROJECT_DOMAIN_NAME").map(IdOrName::Name))
+        .ok();
+
+    let scope = Scope::Project {
+        project,
+        domain: project_domain,
+    };
 
     match auth_type.as_str() {
-        "password" => password_auth_from_env(client, user_name, password),
-        "http_basic" => {
-            let endpoint = utils::require_env("OS_ENDPOINT")?;
-            let id = BasicAuth::new_with_client(&endpoint, client, user_name, password)?;
-            Ok(Session::new(id))
+        "password" => {
+            let user_name = env.get("OS_USERNAME")?;
+            let password = env.get("OS_PASSWORD")?;
+            let user_domain = env
+                .get("OS_USER_DOMAIN_NAME")
+                .unwrap_or_else(|_| String::from("Default"));
+            let id =
+                Password::new_with_client(&auth_url, client, user_name, password, user_domain)?;
+            create_session(id.with_scope(scope), env)
+        }
+        "v3token" => {
+            let token = env.get("OS_TOKEN")?;
+            let id = Token::new_with_client(&auth_url, client, token)?;
+            create_session(id.with_scope(scope), env)
         }
         _ => Err(Error::new(
             ErrorKind::InvalidInput,
             format!("Unsupported authentication type: {}", auth_type),
         )),
+    }
+}
+
+/// Create a `Session` from environment variables.
+///
+/// Supported authentication types are `password`, `v3token`, `http_basic` and `none`.
+pub fn from_env() -> Result<Session, Error> {
+    _from_env(RealEnvironment)
+}
+
+#[cfg(test)]
+pub mod test {
+    use std::collections::HashMap;
+
+    use maplit::hashmap;
+
+    use super::{Environment, _from_env};
+    use crate::{Error, ErrorKind};
+
+    impl Environment for HashMap<&'static str, &'static str> {
+        fn get(&self, name: &'static str) -> Result<String, Error> {
+            self.get(name)
+                .cloned()
+                .map(From::from)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidInput, name))
+        }
+    }
+
+    #[test]
+    fn test_password_no_domains() {
+        let env = hashmap! {
+            "OS_AUTH_URL" => "http://example.com",
+            "OS_USERNAME" => "admin",
+            "OS_PASSWORD" => "password",
+            "OS_PROJECT_NAME" => "admin",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_password_with_domains() {
+        let env = hashmap! {
+            "OS_AUTH_URL" => "http://example.com",
+            "OS_USERNAME" => "admin",
+            "OS_PASSWORD" => "password",
+            "OS_PROJECT_NAME" => "admin",
+            "OS_USER_DOMAIN_NAME" => "Default",
+            "OS_PROJECT_DOMAIN_NAME" => "Default",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_password_with_type() {
+        let env = hashmap! {
+            "OS_AUTH_TYPE" => "password",
+            "OS_AUTH_URL" => "http://example.com",
+            "OS_USERNAME" => "admin",
+            "OS_PASSWORD" => "password",
+            "OS_PROJECT_NAME" => "admin",
+            "OS_USER_DOMAIN_NAME" => "Default",
+            "OS_PROJECT_DOMAIN_NAME" => "Default",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_token_no_domains() {
+        let env = hashmap! {
+            "OS_AUTH_URL" => "http://example.com",
+            "OS_TOKEN" => "abcdef",
+            "OS_PROJECT_NAME" => "admin",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_token_with_domains() {
+        let env = hashmap! {
+            "OS_AUTH_URL" => "http://example.com",
+            "OS_TOKEN" => "abcdef",
+            "OS_PROJECT_NAME" => "admin",
+            "OS_PROJECT_DOMAIN_NAME" => "Default",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_token_with_type() {
+        let env = hashmap! {
+            "OS_AUTH_TYPE" => "v3token",
+            "OS_AUTH_URL" => "http://example.com",
+            "OS_TOKEN" => "abcdef",
+            "OS_PROJECT_NAME" => "admin",
+            "OS_PROJECT_DOMAIN_NAME" => "Default",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_http_basic() {
+        let env = hashmap! {
+            "OS_AUTH_TYPE" => "http_basic",
+            "OS_ENDPOINT" => "http://example.com",
+            "OS_USERNAME" => "admin",
+            "OS_PASSWORD" => "password",
+        };
+
+        let _session = _from_env(env).unwrap();
+    }
+
+    #[test]
+    fn test_none() {
+        let env = hashmap! {
+            "OS_AUTH_TYPE" => "none",
+            "OS_ENDPOINT" => "http://example.com",
+        };
+
+        let _session = _from_env(env).unwrap();
     }
 }
