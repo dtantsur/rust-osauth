@@ -32,8 +32,7 @@
 //!
 //! # Requirements
 //!
-//! This crate requires Rust 2018 edition and rustc version 1.43.0 or newer; the `stream` feature
-//! requires rustc 1.45.0.
+//! This crate requires Rust 2018 edition and rustc version 1.45.2 or newer.
 //!
 //! OpenStack releases starting with Queens are officially supported, although support for
 //! releases older than 1.5 years is best-effort and may be dropped without a prior warning

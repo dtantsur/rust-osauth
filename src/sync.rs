@@ -31,7 +31,7 @@ use reqwest::{Body, RequestBuilder, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
+use tokio::runtime::{self, Runtime};
 
 use super::request;
 use super::services::ServiceType;
@@ -94,9 +94,8 @@ impl SyncSession {
         SyncSession {
             inner: session,
             runtime: RefCell::new(
-                RuntimeBuilder::new()
-                    .basic_scheduler()
-                    .enable_io()
+                runtime::Builder::new_current_thread()
+                    .enable_all()
                     .build()
                     .expect("Could not create a runtime"),
             ),
