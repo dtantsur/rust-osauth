@@ -131,7 +131,4 @@ pub use crate::auth::{AuthType, NoAuth};
 pub use crate::basic::BasicAuth;
 pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces};
 pub use crate::error::{Error, ErrorKind};
-#[deprecated(since = "0.3.3", note = "use osauth::Session::from_env/config")]
-#[doc(hidden)]
-pub use crate::loading::{from_config, from_env};
 pub use crate::session::Session;

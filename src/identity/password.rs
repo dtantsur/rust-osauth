@@ -187,15 +187,6 @@ impl Password {
         self.inner.filters = filters;
     }
 
-    /// Set a region for this authentication method.
-    #[deprecated(since = "0.3.0", note = "Use set_filters or filters_mut")]
-    pub fn set_region<S>(&mut self, region: S)
-    where
-        S: Into<String>,
-    {
-        self.inner.filters.region = Some(region.into());
-    }
-
     /// Scope authentication to the given project.
     ///
     /// A convenience wrapper around `set_scope`.
