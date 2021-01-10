@@ -16,6 +16,7 @@ edition = "2018"
 [features]
 
 default = ["native-tls", "stream", "sync"]
+default-rustls = ["rustls", "stream", "sync"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls-tls"]
 stream = ["async-stream", "futures"]

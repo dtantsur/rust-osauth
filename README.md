@@ -1,8 +1,6 @@
 Asynchronous OpenStack session and authentication
 =================================================
 
-[![Build
-Status](https://travis-ci.org/dtantsur/rust-osauth.svg?branch=master)](https://travis-ci.org/dtantsur/rust-osauth)
 [![License](https://img.shields.io/crates/l/osauth.svg)](https://github.com/dtantsur/rust-osauth/blob/master/LICENSE)
 [![Latest
 Version](https://img.shields.io/crates/v/osauth.svg)](https://crates.io/crates/osauth)
