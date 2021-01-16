@@ -312,7 +312,7 @@ fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<BasicAuth, Error>
 }
 
 fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<NoAuth, Error> {
-    return Ok(if let Some(auth) = auth {
+    Ok(if let Some(auth) = auth {
         if let Some(endpoint) = auth.endpoint {
             NoAuth::new_with_client(&endpoint, client)?
         } else {
@@ -320,7 +320,7 @@ fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<NoAuth, Er
         }
     } else {
         NoAuth::new_without_endpoint(client)
-    });
+    })
 }
 
 fn from_files(

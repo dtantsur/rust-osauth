@@ -1,5 +1,17 @@
 # Change Log
 
+## 0.3.4 (2021-01-16)
+
+#### Bug Fixes
+
+*   a meaningful Debug for ValidInterfaces ([5caa48c1](https://github.com/dtantsur/rust-osauth/commit/5caa48c105e85911925940bee3b6c470232c256b))
+
+#### Features
+
+*   support loading endpoint overrides from clouds.yaml ([afd0c993](https://github.com/dtantsur/rust-osauth/commit/afd0c9937467150f883a18e0c46e718e4911019d))
+*   support loading none authentication from clouds.yaml ([6370e7de](https://github.com/dtantsur/rust-osauth/commit/6370e7de8363c1446a91536d0489c09613023d72))
+* **identity:**  token authentication (fixes #6) ([21657228](https://github.com/dtantsur/rust-osauth/commit/216572281e69498c43b6ec327c42af7223258c46))
+
 ## 0.3.3  (2020-10-11)
 
 #### Bug Fixes

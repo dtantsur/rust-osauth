@@ -90,7 +90,7 @@ impl Internal {
     }
 
     /// Access to the cached token.
-    pub async fn cached_token<'s>(&'s self) -> Result<RwLockReadGuard<'s, Token>, Error> {
+    pub async fn cached_token(&self) -> Result<RwLockReadGuard<'_, Token>, Error> {
         self.refresh(false).await?;
         let guard = self.cached_token.read().await;
         // unwrap is safe because do_refresh unconditionally populates the token
