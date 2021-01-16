@@ -19,13 +19,13 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use log::warn;
-use reqwest::Client;
+use reqwest::{Client, Url};
 use serde::Deserialize;
 
 use crate::identity::{IdOrName, Password, Scope};
 use crate::loading;
 use crate::utils;
-use crate::{BasicAuth, Error, ErrorKind, NoAuth, Session};
+use crate::{AuthType, BasicAuth, Error, ErrorKind, NoAuth, Session};
 
 #[derive(Debug, Deserialize)]
 struct Auth {
@@ -55,6 +55,8 @@ struct Cloud {
     cacert: Option<String>,
     #[serde(default)]
     region_name: Option<String>,
+    #[serde(flatten)]
+    options: HashMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,11 +209,46 @@ fn read_yaml(filename: &str, default_root_key: Option<&str>) -> Result<serde_yam
     }
 }
 
+fn add_endpoint_override(session: &mut Session, key: String, value: String) -> Result<(), Error> {
+    let service_type = key.trim_end_matches("_endpoint_override");
+    let url = Url::parse(&value)
+        .map_err(|e| Error::new(ErrorKind::InvalidConfig, format!("Invalid {}: {}", key, e)))?;
+    let _ = session
+        .endpoint_overrides_mut()
+        .insert(service_type.to_string(), url.clone());
+    // Handle types like baremetal-introspection
+    let with_dashes = service_type.replace("_", "-");
+    let _ = session.endpoint_overrides_mut().insert(with_dashes, url);
+    Ok(())
+}
+
+fn create_session<T: AuthType + 'static>(
+    auth: T,
+    options: HashMap<String, serde_yaml::Value>,
+) -> Result<Session, Error> {
+    let mut result = Session::new(auth);
+    for (key, value) in options {
+        // TODO(dtantsur): replace with strip_suffix when no longer support rustc < 1.45.0
+        if key.ends_with("_endpoint_override") {
+            if let serde_yaml::Value::String(value) = value {
+                add_endpoint_override(&mut result, key, value)?;
+            } else {
+                return Err(Error::new(
+                    ErrorKind::InvalidConfig,
+                    format!("{} must be a string, got {:?}", key, value),
+                ));
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 fn password_auth_from_cloud(
     client: Client,
     auth: Auth,
     region_name: Option<String>,
-) -> Result<Session, Error> {
+) -> Result<Password, Error> {
     let user_domain = auth
         .user_domain_name
         .unwrap_or_else(|| String::from("Default"));
@@ -248,10 +285,10 @@ fn password_auth_from_cloud(
         id.endpoint_filters_mut().region = Some(region);
     }
 
-    Ok(Session::new(id))
+    Ok(id)
 }
 
-fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<Session, Error> {
+fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<BasicAuth, Error> {
     let endpoint = auth.endpoint.ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidConfig,
@@ -271,12 +308,11 @@ fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<Session, Error> {
         )
     })?;
 
-    let id = BasicAuth::new_with_client(&endpoint, client, username, password)?;
-    Ok(Session::new(id))
+    BasicAuth::new_with_client(&endpoint, client, username, password)
 }
 
-fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<Session, Error> {
-    return Ok(Session::new(if let Some(auth) = auth {
+fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<NoAuth, Error> {
+    return Ok(if let Some(auth) = auth {
         if let Some(endpoint) = auth.endpoint {
             NoAuth::new_with_client(&endpoint, client)?
         } else {
@@ -284,7 +320,7 @@ fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<Session, E
         }
     } else {
         NoAuth::new_without_endpoint(client)
-    }));
+    });
 }
 
 fn from_files(
@@ -314,7 +350,7 @@ fn from_files(
     let client = loading::get_client(cloud.cacert)?;
 
     if auth_type == "none" {
-        return none_auth_from_cloud(client, cloud.auth);
+        return create_session(none_auth_from_cloud(client, cloud.auth)?, cloud.options);
     }
 
     let auth = cloud.auth.ok_or_else(|| {
@@ -325,8 +361,11 @@ fn from_files(
     })?;
 
     match auth_type.as_str() {
-        "password" => password_auth_from_cloud(client, auth, cloud.region_name),
-        "http_basic" => basic_auth_from_cloud(client, auth),
+        "password" => create_session(
+            password_auth_from_cloud(client, auth, cloud.region_name)?,
+            cloud.options,
+        ),
+        "http_basic" => create_session(basic_auth_from_cloud(client, auth)?, cloud.options),
         _ => Err(Error::new(
             ErrorKind::InvalidConfig,
             format!("Unsupported authentication type: {}", auth_type),
@@ -474,6 +513,36 @@ pub mod test {
             with_one_key("clouds"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_from_config_none_with_overrides() {
+        let clouds = to_yaml(
+            r#"clouds:
+  cloud_name:
+    auth_type: none
+    baremetal_endpoint_override: http://baremetal/v1
+    baremetal_introspection_endpoint_override: http://introspection/"#,
+        );
+
+        let sess = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .unwrap();
+        assert_eq!(
+            "http://baremetal/v1",
+            sess.endpoint_overrides().get("baremetal").unwrap().as_str()
+        );
+        assert_eq!(
+            "http://introspection/",
+            sess.endpoint_overrides()
+                .get("baremetal-introspection")
+                .unwrap()
+                .as_str()
+        );
     }
 
     #[test]
