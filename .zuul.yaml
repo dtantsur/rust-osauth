@@ -2,14 +2,23 @@
     name: rust-osauth-exercises
     parent: rust-base
     description: |
-      Run rust-openstack acceptance test on master branch
+      Run rust-auth acceptance test on master branch
     run: playbooks/rust-osauth-exercises.yaml
+
+- job:
+    name: rust-osauth-exercises-victoria
+    parent: rust-osauth-exercises
+    description: |
+      Run rust-auth acceptance test on victoria branch
+    vars:
+      global_env:
+        OS_BRANCH: stable/victoria
 
 - job:
     name: rust-osauth-exercises-ussuri
     parent: rust-osauth-exercises
     description: |
-      Run rust-openstack acceptance test on ussuri branch
+      Run rust-auth acceptance test on ussuri branch
     vars:
       global_env:
         OS_BRANCH: stable/ussuri
@@ -18,7 +27,7 @@
     name: rust-osauth-exercises-train
     parent: rust-osauth-exercises
     description: |
-      Run rust-openstack acceptance test on train branch
+      Run rust-auth acceptance test on train branch
     vars:
       global_env:
         OS_BRANCH: stable/train
@@ -27,17 +36,18 @@
     name: rust-osauth-exercises-stein
     parent: rust-osauth-exercises
     description: |
-      Run rust-openstack acceptance test on stein branch
+      Run rust-auth acceptance test on stein branch
     vars:
       global_env:
         OS_BRANCH: stable/stein
     nodeset: ubuntu-xenial
+    voting: false
 
 - job:
     name: rust-osauth-exercises-rocky
     parent: rust-osauth-exercises
     description: |
-      Run rust-openstack acceptance test on rocky branch
+      Run rust-auth acceptance test on rocky branch
     vars:
       global_env:
         OS_BRANCH: stable/rocky
@@ -48,7 +58,7 @@
     name: rust-osauth-exercises-queens
     parent: rust-osauth-exercises
     description: |
-      Run rust-openstack acceptance test on queens branch
+      Run rust-auth acceptance test on queens branch
     vars:
       global_env:
         OS_BRANCH: stable/queens
@@ -59,7 +69,7 @@
     name: rust-osauth-exercises-nightly
     parent: rust-base
     description: |
-      Run rust-openstack acceptance test on master branch with nightly rust.
+      Run rust-auth acceptance test on master branch with nightly rust.
     run: playbooks/rust-osauth-exercises.yaml
     vars:
       rustup_toolchain: nightly
@@ -70,6 +80,7 @@
     check:
       jobs:
         - rust-osauth-exercises
+        - rust-osauth-exercises-victoria
         - rust-osauth-exercises-ussuri
         - rust-osauth-exercises-train
         - rust-osauth-exercises-stein
