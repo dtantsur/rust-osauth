@@ -3,7 +3,7 @@
 name = "osauth"
 description = "Asynchronous OpenStack session and authentication"
 version = "0.3.3"  # remember to update html_root_url
-authors = ["Dmitry Tantsur <divius.inside@gmail.com>"]
+authors = ["Dmitry Tantsur <dtantsur@protonmail.com>"]
 homepage = "https://github.com/dtantsur/rust-osauth"
 repository = "https://github.com/dtantsur/rust-osauth"
 documentation = "https://docs.rs/osauth"
