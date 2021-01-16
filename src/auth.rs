@@ -19,7 +19,7 @@ use std::fmt::Debug;
 use async_trait::async_trait;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 
-use super::{EndpointFilters, Error};
+use super::{EndpointFilters, Error, ErrorKind};
 
 /// Trait for an authentication type.
 ///
@@ -61,7 +61,7 @@ pub trait AuthType: Debug + Sync + Send {
 #[derive(Clone, Debug)]
 pub struct NoAuth {
     client: Client,
-    endpoint: Url,
+    endpoint: Option<Url>,
 }
 
 impl NoAuth {
@@ -85,8 +85,19 @@ impl NoAuth {
     {
         Ok(NoAuth {
             client,
-            endpoint: endpoint.into_url()?,
+            endpoint: Some(endpoint.into_url()?),
         })
+    }
+
+    /// Create a new fake authentication method without an endpoint.
+    ///
+    /// All calls to `get_endpoint` will fail. This option is only useful with endpoint overrides.
+    #[inline]
+    pub fn new_without_endpoint(client: Client) -> NoAuth {
+        NoAuth {
+            client,
+            endpoint: None,
+        }
     }
 }
 
@@ -100,10 +111,18 @@ impl AuthType for NoAuth {
     /// Get a predefined endpoint for all service types
     async fn get_endpoint(
         &self,
-        _service_type: String,
+        service_type: String,
         _filters: EndpointFilters,
     ) -> Result<Url, Error> {
-        Ok(self.endpoint.clone())
+        self.endpoint.clone().ok_or_else(|| {
+            Error::new(
+                ErrorKind::EndpointNotFound,
+                format!(
+                    "None authentication without an endpoint, use an override for {}",
+                    service_type
+                ),
+            )
+        })
     }
 
     /// This call does nothing for `NoAuth`.
@@ -119,7 +138,7 @@ pub mod test {
     #[test]
     fn test_noauth_new() {
         let a = NoAuth::new("http://127.0.0.1:8080/v1").unwrap();
-        let e = a.endpoint;
+        let e = a.endpoint.unwrap();
         assert_eq!(e.scheme(), "http");
         assert_eq!(e.host_str().unwrap(), "127.0.0.1");
         assert_eq!(e.port().unwrap(), 8080u16);

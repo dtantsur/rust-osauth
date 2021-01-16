@@ -1,4 +1,4 @@
-// Copyright 2018-2020 Dmitry Tantsur <divius.inside@gmail.com>
+// Copyright 2018-2021 Dmitry Tantsur <divius.inside@gmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ use serde::Deserialize;
 use crate::identity::{IdOrName, Password, Scope};
 use crate::loading;
 use crate::utils;
-use crate::{BasicAuth, Error, ErrorKind, Session};
+use crate::{BasicAuth, Error, ErrorKind, NoAuth, Session};
 
 #[derive(Debug, Deserialize)]
 struct Auth {
@@ -33,19 +33,22 @@ struct Auth {
     auth_url: Option<String>,
     #[serde(default)]
     endpoint: Option<String>,
-    password: String,
+    #[serde(default)]
+    password: Option<String>,
     #[serde(default)]
     project_name: Option<String>,
     #[serde(default)]
     project_domain_name: Option<String>,
-    username: String,
+    #[serde(default)]
+    username: Option<String>,
     #[serde(default)]
     user_domain_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Cloud {
-    auth: Auth,
+    #[serde(default)]
+    auth: Option<Auth>,
     #[serde(default)]
     auth_type: Option<String>,
     #[serde(default)]
@@ -221,8 +224,19 @@ fn password_auth_from_cloud(
             "Identity authentication requires an auth_url",
         )
     })?;
-    let mut id =
-        Password::new_with_client(&auth_url, client, auth.username, auth.password, user_domain)?;
+    let username = auth.username.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "Identity authentication requires a user name",
+        )
+    })?;
+    let password = auth.password.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "Identity authentication requires a password",
+        )
+    })?;
+    let mut id = Password::new_with_client(&auth_url, client, username, password, user_domain)?;
     if let Some(project_name) = auth.project_name {
         let scope = Scope::Project {
             project: IdOrName::Name(project_name),
@@ -235,6 +249,42 @@ fn password_auth_from_cloud(
     }
 
     Ok(Session::new(id))
+}
+
+fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<Session, Error> {
+    let endpoint = auth.endpoint.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "HTTP basic authentication requires an endpoint",
+        )
+    })?;
+    let username = auth.username.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "HTTP basic authentication requires a user name",
+        )
+    })?;
+    let password = auth.password.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "HTTP basic authentication requires a password",
+        )
+    })?;
+
+    let id = BasicAuth::new_with_client(&endpoint, client, username, password)?;
+    Ok(Session::new(id))
+}
+
+fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<Session, Error> {
+    return Ok(Session::new(if let Some(auth) = auth {
+        if let Some(endpoint) = auth.endpoint {
+            NoAuth::new_with_client(&endpoint, client)?
+        } else {
+            NoAuth::new_without_endpoint(client)
+        }
+    } else {
+        NoAuth::new_without_endpoint(client)
+    }));
 }
 
 fn from_files(
@@ -263,24 +313,20 @@ fn from_files(
 
     let client = loading::get_client(cloud.cacert)?;
 
-    match auth_type.as_str() {
-        "password" => password_auth_from_cloud(client, cloud.auth, cloud.region_name),
-        "http_basic" => {
-            let endpoint = cloud.auth.endpoint.ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidConfig,
-                    "Identity authentication requires an endpoint",
-                )
-            })?;
+    if auth_type == "none" {
+        return none_auth_from_cloud(client, cloud.auth);
+    }
 
-            let id = BasicAuth::new_with_client(
-                &endpoint,
-                client,
-                cloud.auth.username,
-                cloud.auth.password,
-            )?;
-            Ok(Session::new(id))
-        }
+    let auth = cloud.auth.ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            format!("{} authentication requires 'auth' object", auth_type),
+        )
+    })?;
+
+    match auth_type.as_str() {
+        "password" => password_auth_from_cloud(client, auth, cloud.region_name),
+        "http_basic" => basic_auth_from_cloud(client, auth),
         _ => Err(Error::new(
             ErrorKind::InvalidConfig,
             format!("Unsupported authentication type: {}", auth_type),
@@ -365,6 +411,60 @@ pub mod test {
       endpoint: http://url1
       username: user1
       password: password1"#,
+        );
+
+        let _ = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_from_config_none() {
+        let clouds = to_yaml(
+            r#"clouds:
+  cloud_name:
+    auth_type: none
+    auth:
+      endpoint: http://url1"#,
+        );
+
+        let _ = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_from_config_none_without_endpoint() {
+        let clouds = to_yaml(
+            r#"clouds:
+  cloud_name:
+    auth_type: none
+    auth: {}"#,
+        );
+
+        let _ = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_from_config_none_without_auth() {
+        let clouds = to_yaml(
+            r#"clouds:
+  cloud_name:
+    auth_type: none"#,
         );
 
         let _ = from_files(
