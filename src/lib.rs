@@ -35,6 +35,10 @@
 //! This crate requires Rust 2018 edition and rustc version 1.43.0 or newer; the `stream` feature
 //! requires rustc 1.45.0.
 //!
+//! OpenStack releases starting with Queens are officially supported, although support for
+//! releases older than 1.5 years is best-effort and may be dropped without a prior warning
+//! (it will not be considered a breaking change).
+//!
 //! # Usage
 //!
 //! Your entry point to the API is the [Session](struct.Session.html) structure. To create it you
