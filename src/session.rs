@@ -77,9 +77,9 @@ impl Session {
     /// The `cloud_name` argument is a name of the cloud entry to use.
     ///
     /// Supported features are:
-    /// 1. Password and HTTP basic authentication.
+    /// 1. Password and HTTP basic authentication, as well as no authentication.
     /// 2. Users, projects and domains by name.
-    /// 3. Region names.
+    /// 3. Region names (for password authentication).
     /// 4. Custom TLS CA certificates.
     /// 5. Profiles from `clouds-public.yaml`.
     /// 6. Credentials from `secure.yaml`.
