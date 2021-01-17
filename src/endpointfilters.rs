@@ -21,10 +21,10 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use log::{debug, error};
-use osproto::identity::{CatalogRecord, Endpoint};
 use reqwest::Url;
 
 use super::{Error, ErrorKind};
+use crate::identity::protocol::{CatalogRecord, Endpoint};
 
 /// Interface type: public, internal or admin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -362,10 +362,9 @@ pub mod test {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    use osproto::identity::{CatalogRecord, Endpoint};
-
-    use super::super::{Error, ErrorKind};
     use super::{EndpointFilters, InterfaceType, ValidInterfaces};
+    use crate::identity::protocol::{CatalogRecord, Endpoint};
+    use crate::{Error, ErrorKind};
     use InterfaceType::*;
 
     fn demo_service1() -> CatalogRecord {

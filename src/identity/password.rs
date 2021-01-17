@@ -15,11 +15,12 @@
 //! Password authentication.
 
 use async_trait::async_trait;
-use osproto::identity as protocol;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 
 use super::internal::Internal;
-use super::{IdOrName, Identity, Scope};
+use super::protocol;
+use super::{Identity, Scope};
+use crate::common::IdOrName;
 use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 
 /// Password authentication using Identity API V3.
@@ -38,7 +39,7 @@ use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 /// with [with_project_scope](#method.with_project_scope):
 ///
 /// ```rust,no_run
-/// # use osauth::identity::IdOrName;
+/// use osauth::common::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
@@ -54,7 +55,7 @@ use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 /// If your cloud has several regions, pick one using [with_region](#method.with_region):
 ///
 /// ```rust,no_run
-/// use osauth::identity::IdOrName;
+/// use osauth::common::IdOrName;
 ///
 /// let scope = osauth::identity::Scope::Project {
 ///     project: IdOrName::from_name("project1"),
@@ -78,7 +79,7 @@ use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 /// [with_default_endpoint_interface](#method.with_default_endpoint_interface).
 ///
 /// ```rust,no_run
-/// use osauth::identity::IdOrName;
+/// use osauth::common::IdOrName;
 ///
 /// let scope = osauth::identity::Scope::Project {
 ///     project: IdOrName::from_name("project1"),
@@ -149,9 +150,9 @@ impl Password {
         let auth_url = auth_url.into_url()?;
 
         let pw = protocol::UserAndPassword {
-            user: protocol::IdOrName::Name(user_name.into()),
+            user: IdOrName::Name(user_name.into()),
             password: password.into(),
-            domain: Some(protocol::IdOrName::Name(user_domain_name.into())),
+            domain: Some(IdOrName::Name(user_domain_name.into())),
         };
         let body = protocol::AuthRoot {
             auth: protocol::Auth {

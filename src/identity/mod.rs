@@ -19,11 +19,12 @@
 
 mod internal;
 mod password;
+pub(crate) mod protocol;
 mod token;
 
 use reqwest::Url;
 
-pub use osproto::identity::IdOrName;
+use super::common::IdOrName;
 
 pub use self::password::Password;
 pub use self::token::Token;

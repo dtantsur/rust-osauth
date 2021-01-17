@@ -22,7 +22,8 @@ use log::warn;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 
-use crate::identity::{IdOrName, Password, Scope};
+use crate::common::IdOrName;
+use crate::identity::{Password, Scope};
 use crate::loading;
 use crate::utils;
 use crate::{AuthType, BasicAuth, Error, ErrorKind, NoAuth, Session};

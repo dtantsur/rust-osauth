@@ -17,7 +17,8 @@
 use std::env;
 use std::str::FromStr;
 
-use crate::identity::{IdOrName, Password, Scope, Token};
+use crate::common::IdOrName;
+use crate::identity::{Password, Scope, Token};
 use crate::loading;
 use crate::{
     AuthType, BasicAuth, EndpointFilters, Error, ErrorKind, InterfaceType, NoAuth, Session,

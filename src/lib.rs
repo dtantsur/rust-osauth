@@ -110,6 +110,7 @@ mod adapter;
 mod apiversion;
 mod auth;
 mod basic;
+pub mod common;
 mod endpointfilters;
 mod error;
 pub mod identity;

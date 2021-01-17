@@ -15,10 +15,10 @@
 //! Token authentication.
 
 use async_trait::async_trait;
-use osproto::identity as protocol;
 use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 
 use super::internal::Internal;
+use super::protocol;
 use super::{IdOrName, Identity, Scope};
 use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 
@@ -34,7 +34,7 @@ use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
 /// with [with_project_scope](#method.with_project_scope):
 ///
 /// ```rust,no_run
-/// # use osauth::identity::IdOrName;
+/// use osauth::common::IdOrName;
 /// let auth = osauth::identity::Token::new(
 ///     "https://cloud.local/identity",
 ///     "<a token>",

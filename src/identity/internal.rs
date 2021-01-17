@@ -21,10 +21,10 @@ use std::ops::Deref;
 
 use chrono::{Duration, Local};
 use log::{debug, error, trace};
-use osproto::identity::{self as protocol, AuthRoot};
 use reqwest::{Client, Method, RequestBuilder, Response, Url};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
+use super::protocol::{self, AuthRoot};
 use super::{IdOrName, Scope, INVALID_SUBJECT_HEADER, MISSING_SUBJECT_HEADER, TOKEN_MIN_VALIDITY};
 use crate::{request, EndpointFilters, Error, ErrorKind};
 

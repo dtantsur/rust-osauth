@@ -17,7 +17,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use osproto::common::XdotY;
 use reqwest::header::HeaderValue;
 use serde::de::{Error as DeserError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -27,15 +26,6 @@ use super::{Error, ErrorKind};
 /// API version (major, minor).
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct ApiVersion(pub u16, pub u16);
-
-impl<T> From<XdotY<T>> for ApiVersion
-where
-    T: Into<u16>,
-{
-    fn from(value: XdotY<T>) -> ApiVersion {
-        ApiVersion(value.0.into(), value.1.into())
-    }
-}
 
 impl fmt::Display for ApiVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -59,10 +49,11 @@ impl FromStr for ApiVersion {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<ApiVersion, Error> {
-        let parts: Vec<&str> = s.split('.').collect();
+        let version_part = if s.starts_with('v') { &s[1..] } else { &s };
+        let parts: Vec<&str> = version_part.split('.').collect();
 
         if parts.is_empty() || parts.len() > 2 {
-            let msg = format!("Invalid API version: expected X.Y, got {}", s);
+            let msg = format!("Invalid API version: expected X.Y or X, got {}", s);
             return Err(Error::new(ErrorKind::InvalidResponse, msg));
         }
 
@@ -93,7 +84,7 @@ impl<'de> Visitor<'de> for ApiVersionVisitor {
     type Value = ApiVersion;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a string in format X.Y")
+        formatter.write_str("a string in format X.Y or X")
     }
 
     fn visit_str<E>(self, value: &str) -> ::std::result::Result<ApiVersion, E>
@@ -117,22 +108,67 @@ impl<'de> Deserialize<'de> for ApiVersion {
 pub mod test {
     use std::str::FromStr;
 
+    use serde::Deserialize;
     use serde_json;
 
     use super::ApiVersion;
 
     #[test]
-    fn test_apiversion_format() {
-        let ver = ApiVersion(2, 27);
-        assert_eq!(&ver.to_string(), "2.27");
-        assert_eq!(ApiVersion::from_str("2.27").unwrap(), ver);
+    fn test_apiversion_display() {
+        let xy = ApiVersion(1, 2);
+        let s = format!("{}", xy);
+        assert_eq!(s, "1.2");
     }
 
     #[test]
-    fn test_apiversion_serde() {
-        let ver = ApiVersion(2, 27);
-        let ser = serde_json::to_string(&ver).unwrap();
+    fn test_apiversion_from_str() {
+        assert_eq!(ApiVersion::from_str("v2.27").unwrap(), ApiVersion(2, 27));
+        assert_eq!(ApiVersion::from_str("2.27").unwrap(), ApiVersion(2, 27));
+        assert_eq!(ApiVersion::from_str("2").unwrap(), ApiVersion(2, 0));
+    }
+
+    #[test]
+    fn test_apiversion_from_str_failure() {
+        for s in &["foo", "1.foo", "foo.2", "1.2.3"] {
+            let res: Result<ApiVersion, _> = ApiVersion::from_str(s);
+            assert!(res.is_err());
+        }
+    }
+
+    #[test]
+    fn test_apiversion_serde_serialize() {
+        let xy = ApiVersion(2, 27);
+        let ser = serde_json::to_string(&xy).unwrap();
         assert_eq!(&ser, "\"2.27\"");
-        assert_eq!(serde_json::from_str::<ApiVersion>(&ser).unwrap(), ver);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Struct {
+        pub req: ApiVersion,
+        pub opt: Option<ApiVersion>,
+    }
+
+    #[test]
+    fn test_apiversion_serde_deserialize() {
+        let xy: ApiVersion = serde_json::from_str("\"2.27\"").unwrap();
+        assert_eq!(xy, ApiVersion(2, 27));
+        let xy2: ApiVersion =
+            serde_json::from_value(serde_json::Value::String("2.27".to_string())).unwrap();
+        assert_eq!(xy2, ApiVersion(2, 27));
+        let st: Struct = serde_json::from_str("{\"req\": \"2.27\", \"opt\": \"2.42\"}").unwrap();
+        assert_eq!(st.req, ApiVersion(2, 27));
+        assert_eq!(st.opt.unwrap(), ApiVersion(2, 42));
+    }
+
+    #[test]
+    fn test_apiversion_serde_deserialize_with_v() {
+        let xy: ApiVersion = serde_json::from_str("\"v2.27\"").unwrap();
+        assert_eq!(xy, ApiVersion(2, 27));
+        let xy2: ApiVersion =
+            serde_json::from_value(serde_json::Value::String("v2.27".to_string())).unwrap();
+        assert_eq!(xy2, ApiVersion(2, 27));
+        let st: Struct = serde_json::from_str("{\"req\": \"v2.27\", \"opt\": \"v2.42\"}").unwrap();
+        assert_eq!(st.req, ApiVersion(2, 27));
+        assert_eq!(st.opt.unwrap(), ApiVersion(2, 42));
     }
 }

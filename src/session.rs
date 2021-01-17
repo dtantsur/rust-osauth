@@ -480,7 +480,7 @@ impl Session {
     ///
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
-    /// use osproto::common::IdAndName;
+    /// use osauth::common::IdAndName;
     /// use serde::Deserialize;
     ///
     /// #[derive(Debug, Deserialize)]

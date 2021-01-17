@@ -15,15 +15,102 @@
 //! JSON structures and protocol bits for the Identity V3 API.
 
 use std::convert::TryFrom;
+use std::iter::{DoubleEndedIterator, FusedIterator};
+use std::vec::IntoIter;
 
 use log::{debug, error, trace, warn};
-use osproto::common::{Root, Version};
 use reqwest::{Method, Url};
+use serde::Deserialize;
 
+use super::common::Version;
 use super::request;
 use super::services::ServiceType;
 use super::url;
 use super::{ApiVersion, AuthType, Error, ErrorKind};
+
+/// A result of a version discovery endpoint.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Root {
+    /// Multiple major versions.
+    MultipleVersions { versions: Vec<Version> },
+    /// Single major version.
+    OneVersion { version: Version },
+}
+
+#[derive(Debug, Clone)]
+enum IntoStableIterInner {
+    Many(IntoIter<Version>),
+    One(Option<Version>),
+}
+
+/// An iterator over stable versions.
+#[derive(Debug)]
+pub struct IntoStableIter(IntoStableIterInner);
+
+impl Iterator for IntoStableIter {
+    type Item = Version;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0 {
+            IntoStableIterInner::Many(ref mut inner) => {
+                for next in inner {
+                    if next.is_stable() {
+                        return Some(next);
+                    }
+                }
+
+                None
+            }
+            IntoStableIterInner::One(ref mut opt) => opt.take(),
+        }
+    }
+}
+
+impl DoubleEndedIterator for IntoStableIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self.0 {
+            IntoStableIterInner::Many(ref mut inner) => {
+                while let Some(next) = inner.next_back() {
+                    if next.is_stable() {
+                        return Some(next);
+                    }
+                }
+
+                None
+            }
+            IntoStableIterInner::One(ref mut opt) => opt.take(),
+        }
+    }
+}
+
+impl FusedIterator for IntoStableIter {}
+
+impl Root {
+    /// Sort versions from lowest to highest (using unstable sorting).
+    #[inline]
+    pub fn sort(&mut self) {
+        if let Root::MultipleVersions {
+            versions: ref mut vers,
+        } = self
+        {
+            vers.sort_unstable();
+        }
+    }
+
+    /// Create an iterator over stable versions.
+    pub fn into_stable_iter(self) -> IntoStableIter {
+        match self {
+            Root::MultipleVersions { versions: vers } => {
+                IntoStableIter(IntoStableIterInner::Many(vers.into_iter()))
+            }
+            Root::OneVersion { version: ver } => {
+                let stable = if ver.is_stable() { Some(ver) } else { None };
+                IntoStableIter(IntoStableIterInner::One(stable))
+            }
+        }
+    }
+}
 
 /// Information about API endpoint.
 #[derive(Debug)]
@@ -195,18 +282,18 @@ impl ServiceInfo {
 pub(crate) mod test {
     use std::convert::TryFrom;
 
-    use osproto::common::{Link, Root, Version, XdotY};
     use reqwest::Url;
 
-    use super::super::services::ServiceType;
-    use super::super::{ApiVersion, ErrorKind};
-    use super::ServiceInfo;
+    use super::{Root, ServiceInfo};
+    use crate::common::{Link, Version, VersionStatus};
+    use crate::services::ServiceType;
+    use crate::{ApiVersion, ErrorKind};
 
     #[test]
     fn test_version_into_service_info() {
         let url = Url::parse("https://example.com/v2").unwrap();
         let ver = Version {
-            id: XdotY(2, 0),
+            id: ApiVersion(2, 0),
             links: vec![
                 Link {
                     href: Url::parse("https://example.com/docs").unwrap(),
@@ -217,8 +304,8 @@ pub(crate) mod test {
                     rel: "self".to_string(),
                 },
             ],
-            status: None,
-            version: Some(XdotY(2, 2)),
+            status: VersionStatus::Unknown,
+            version: Some(ApiVersion(2, 2)),
             min_version: None,
         };
         let info = ServiceInfo::try_from(ver).unwrap();
@@ -231,13 +318,13 @@ pub(crate) mod test {
     #[test]
     fn test_version_into_service_info_no_self_link() {
         let ver = Version {
-            id: XdotY(2, 0),
+            id: ApiVersion(2, 0),
             links: vec![Link {
                 href: Url::parse("https://example.com/docs").unwrap(),
                 rel: "other".to_string(),
             }],
-            status: None,
-            version: Some(XdotY(2, 2)),
+            status: VersionStatus::Unknown,
+            version: Some(ApiVersion(2, 2)),
             min_version: None,
         };
         let err = ServiceInfo::try_from(ver).err().unwrap();
@@ -261,12 +348,12 @@ pub(crate) mod test {
         let url = Url::parse("https://example.com/v1.2").unwrap();
         let root = Root::OneVersion {
             version: Version {
-                id: XdotY(1, 2),
+                id: ApiVersion(1, 2),
                 links: vec![Link {
                     href: url.clone(),
                     rel: "self".to_string(),
                 }],
-                status: Some("STABLE".to_string()),
+                status: VersionStatus::Supported,
                 version: None,
                 min_version: None,
             },
@@ -282,12 +369,12 @@ pub(crate) mod test {
         let url = Url::parse("https://example.com/v1.0").unwrap();
         let root = Root::OneVersion {
             version: Version {
-                id: XdotY(1, 0),
+                id: ApiVersion(1, 0),
                 links: vec![Link {
                     href: url.clone(),
                     rel: "self".to_string(),
                 }],
-                status: Some("STABLE".to_string()),
+                status: VersionStatus::Supported,
                 version: None,
                 min_version: None,
             },
@@ -305,42 +392,42 @@ pub(crate) mod test {
         let root = Root::MultipleVersions {
             versions: vec![
                 Version {
-                    id: XdotY(1, 0),
+                    id: ApiVersion(1, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/1.0").unwrap(),
                         rel: "self".to_string(),
                     }],
-                    status: Some("STABLE".to_string()),
+                    status: VersionStatus::Supported,
                     version: None,
                     min_version: None,
                 },
                 Version {
-                    id: XdotY(1, 1),
+                    id: ApiVersion(1, 1),
                     links: vec![Link {
                         href: Url::parse("https://example.com/1.1").unwrap(),
                         rel: "self".to_string(),
                     }],
-                    status: Some("STABLE".to_string()),
+                    status: VersionStatus::Supported,
                     version: None,
                     min_version: None,
                 },
                 Version {
-                    id: XdotY(1, 2),
+                    id: ApiVersion(1, 2),
                     links: vec![Link {
                         href: url.clone(),
                         rel: "self".to_string(),
                     }],
-                    status: Some("STABLE".to_string()),
+                    status: VersionStatus::Supported,
                     version: None,
                     min_version: None,
                 },
                 Version {
-                    id: XdotY(2, 0),
+                    id: ApiVersion(2, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/2.0").unwrap(),
                         rel: "self".to_string(),
                     }],
-                    status: Some("STABLE".to_string()),
+                    status: VersionStatus::Supported,
                     version: None,
                     min_version: None,
                 },
@@ -357,22 +444,22 @@ pub(crate) mod test {
         let root = Root::MultipleVersions {
             versions: vec![
                 Version {
-                    id: XdotY(1, 0),
+                    id: ApiVersion(1, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/1.0").unwrap(),
                         rel: "self".to_string(),
                     }],
-                    status: Some("STABLE".to_string()),
+                    status: VersionStatus::Supported,
                     version: None,
                     min_version: None,
                 },
                 Version {
-                    id: XdotY(2, 0),
+                    id: ApiVersion(2, 0),
                     links: vec![Link {
                         href: Url::parse("https://example.com/2.0").unwrap(),
                         rel: "self".to_string(),
                     }],
-                    status: Some("STABLE".to_string()),
+                    status: VersionStatus::Supported,
                     version: None,
                     min_version: None,
                 },
@@ -383,5 +470,199 @@ pub(crate) mod test {
             .err()
             .unwrap();
         assert_eq!(err.kind(), ErrorKind::EndpointNotFound);
+    }
+
+    #[test]
+    fn test_root_sort() {
+        let vers: Vec<_> = [3, 1, 2]
+            .iter()
+            .map(|idx| Version {
+                id: ApiVersion(*idx, 0),
+                links: Vec::new(),
+                status: VersionStatus::Unknown,
+                version: None,
+                min_version: None,
+            })
+            .collect();
+        let mut root = Root::MultipleVersions { versions: vers };
+        root.sort();
+        if let Root::MultipleVersions { versions: res } = root {
+            let idx = res.into_iter().map(|v| v.id.0).collect::<Vec<_>>();
+            assert_eq!(idx, vec![1, 2, 3]);
+        } else {
+            unreachable!();
+        }
+    }
+
+    #[test]
+    fn test_root_sort_one() {
+        let ver = Version {
+            id: ApiVersion(2, 0),
+            links: Vec::new(),
+            status: VersionStatus::Supported,
+            version: None,
+            min_version: None,
+        };
+        let mut root = Root::OneVersion { version: ver };
+        root.sort();
+        if let Root::OneVersion { version: res } = root {
+            assert_eq!(res.id.0, 2);
+        } else {
+            unreachable!();
+        }
+    }
+
+    #[test]
+    fn test_root_into_sorted() {
+        let vers: Vec<_> = [3, 1, 2]
+            .iter()
+            .map(|idx| Version {
+                id: ApiVersion(*idx, 0),
+                links: Vec::new(),
+                status: VersionStatus::Unknown,
+                version: None,
+                min_version: None,
+            })
+            .collect();
+        let mut root = Root::MultipleVersions { versions: vers };
+        root.sort();
+        if let Root::MultipleVersions { versions: res } = root {
+            let idx = res.into_iter().map(|v| v.id.0).collect::<Vec<_>>();
+            assert_eq!(idx, vec![1, 2, 3]);
+        } else {
+            unreachable!();
+        }
+    }
+
+    #[test]
+    fn test_root_into_stable_iter() {
+        let vers: Vec<_> = [3, 1, 2]
+            .iter()
+            .map(|idx| Version {
+                id: ApiVersion(*idx, 0),
+                links: Vec::new(),
+                status: if *idx > 1 {
+                    VersionStatus::Supported
+                } else {
+                    VersionStatus::Deprecated
+                },
+                version: None,
+                min_version: None,
+            })
+            .collect();
+        let root = Root::MultipleVersions { versions: vers };
+        let idx = root
+            .into_stable_iter()
+            .map(|ver| ver.id.0)
+            .collect::<Vec<_>>();
+        assert_eq!(idx, vec![3, 2]);
+    }
+
+    #[test]
+    fn test_root_into_stable_iter_reverse() {
+        let vers: Vec<_> = [3, 1, 2]
+            .iter()
+            .map(|idx| Version {
+                id: ApiVersion(*idx, 0),
+                links: Vec::new(),
+                status: if *idx > 1 {
+                    VersionStatus::Supported
+                } else {
+                    VersionStatus::Deprecated
+                },
+                version: None,
+                min_version: None,
+            })
+            .collect();
+        let root = Root::MultipleVersions { versions: vers };
+        let mut idx = root.into_stable_iter().map(|ver| ver.id.0);
+        assert_eq!(idx.next_back(), Some(2));
+        assert_eq!(idx.next_back(), Some(3));
+        assert!(idx.next_back().is_none());
+        assert!(idx.next().is_none());
+    }
+
+    #[test]
+    fn test_root_into_stable_iter_one() {
+        let ver = Version {
+            id: ApiVersion(2, 0),
+            links: Vec::new(),
+            status: VersionStatus::Supported,
+            version: None,
+            min_version: None,
+        };
+        let root = Root::OneVersion { version: ver };
+        let idx = root
+            .into_stable_iter()
+            .map(|ver| ver.id.0)
+            .collect::<Vec<_>>();
+        assert_eq!(idx, vec![2]);
+    }
+
+    #[test]
+    fn test_root_into_stable_iter_one_unstable() {
+        let ver = Version {
+            id: ApiVersion(2, 0),
+            links: Vec::new(),
+            status: VersionStatus::Deprecated,
+            version: None,
+            min_version: None,
+        };
+        let root = Root::OneVersion { version: ver };
+        let mut idx = root.into_stable_iter().map(|ver| ver.id.0);
+        assert!(idx.next().is_none());
+    }
+
+    #[test]
+    fn test_root_into_stable_iter_one_reverse() {
+        let ver = Version {
+            id: ApiVersion(2, 0),
+            links: Vec::new(),
+            status: VersionStatus::Supported,
+            version: None,
+            min_version: None,
+        };
+        let root = Root::OneVersion { version: ver };
+        let mut idx = root.into_stable_iter().map(|ver| ver.id.0);
+        assert_eq!(idx.next_back(), Some(2));
+        assert!(idx.next_back().is_none());
+    }
+
+    const COMPUTE_ONE: &str = r#"{
+  "version": {
+    "status": "CURRENT",
+    "updated": "2013-07-23T11:33:21Z",
+    "links": [
+      {
+        "href": "https://example.org:13774/v2.1/",
+        "rel": "self"
+      },
+      {
+        "href": "http://docs.openstack.org/",
+        "type": "text/html",
+        "rel": "describedby"
+      }
+    ],
+    "min_version": "2.1",
+    "version": "2.42",
+    "media-types": [
+      {
+        "base": "application/json",
+        "type": "application/vnd.openstack.compute+json;version=2.1"
+      }
+    ],
+    "id": "v2.1"
+  }
+}"#;
+
+    #[test]
+    fn test_parse_root_one_version() {
+        let root: Root = serde_json::from_str(COMPUTE_ONE).unwrap();
+        match root {
+            Root::OneVersion { version } => {
+                assert_eq!(version.id, ApiVersion(2, 1));
+            }
+            Root::MultipleVersions { .. } => panic!("Unexpected multiple versions"),
+        }
     }
 }

@@ -347,7 +347,7 @@ impl SyncSession {
     /// Fetch a JSON using the GET request.
     ///
     /// ```rust,no_run
-    /// use osproto::common::IdAndName;
+    /// use osauth::common::IdAndName;
     /// use serde::Deserialize;
     ///
     /// #[derive(Debug, Deserialize)]
