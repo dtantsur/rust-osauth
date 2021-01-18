@@ -1,4 +1,4 @@
-// Copyright 2018-2021 Dmitry Tantsur <divius.inside@gmail.com>
+// Copyright 2018-2021 Dmitry Tantsur <dtantsur@protonmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
