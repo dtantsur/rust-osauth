@@ -233,6 +233,15 @@ impl Session {
             .insert(service.catalog_type().to_string(), url);
     }
 
+    /// A convenience call to set a region.
+    ///
+    /// This call clears the cached service information for this `Session`.
+    /// It does not, however, affect clones of this `Session`.
+    pub fn set_region<T: Into<String>>(&mut self, region: T) {
+        self.reset_cache();
+        self.endpoint_filters.region = Some(region.into());
+    }
+
     /// Convert this session into one using the given authentication.
     #[inline]
     pub fn with_auth_type<Auth: AuthType + 'static>(mut self, auth_method: Auth) -> Session {
@@ -265,6 +274,13 @@ impl Session {
     #[inline]
     pub fn with_endpoint_overrides(mut self, endpoint_overrides: HashMap<String, Url>) -> Session {
         *self.endpoint_overrides_mut() = endpoint_overrides;
+        self
+    }
+
+    /// Convert this session into one using the given region.
+    #[inline]
+    pub fn with_region<T: Into<String>>(mut self, region: T) -> Session {
+        self.set_region(region);
         self
     }
 

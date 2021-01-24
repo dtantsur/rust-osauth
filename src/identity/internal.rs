@@ -56,7 +56,6 @@ pub(crate) struct Internal {
     body: AuthRoot,
     token_endpoint: String,
     cached_token: RwLock<Option<Token>>,
-    pub filters: EndpointFilters,
 }
 
 impl Internal {
@@ -79,7 +78,6 @@ impl Internal {
             body,
             token_endpoint,
             cached_token: RwLock::new(None),
-            filters: EndpointFilters::default(),
         })
     }
 
@@ -103,13 +101,12 @@ impl Internal {
         service_type: String,
         filters: EndpointFilters,
     ) -> Result<Url, Error> {
-        let real_filters = filters.with_defaults(&self.filters);
         debug!(
             "Requesting a catalog endpoint for service '{}', filters {:?}",
-            service_type, real_filters
+            service_type, filters
         );
         let token = self.cached_token().await?;
-        real_filters.find_in_catalog(&token.body.catalog, &service_type)
+        filters.find_in_catalog(&token.body.catalog, &service_type)
     }
 
     /// Get the authentication token string.
@@ -194,7 +191,6 @@ impl Clone for Internal {
             body: self.body.clone(),
             token_endpoint: self.token_endpoint.clone(),
             cached_token: RwLock::new(None),
-            filters: self.filters.clone(),
         }
     }
 }

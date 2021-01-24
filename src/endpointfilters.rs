@@ -346,15 +346,6 @@ impl EndpointFilters {
             .next()
             .ok_or_else(|| Error::new_endpoint_not_found(service_type))
     }
-
-    /// Clone defaults from the provided filters.
-    pub(crate) fn with_defaults(mut self, other: &EndpointFilters) -> EndpointFilters {
-        if self.interfaces.is_empty() {
-            self.interfaces = other.interfaces;
-        }
-        self.region = self.region.or_else(|| other.region.clone());
-        self
-    }
 }
 
 #[cfg(test)]

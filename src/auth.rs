@@ -43,11 +43,6 @@ pub trait AuthType: Debug + Sync + Send {
 
     /// Refresh the authentication (renew the token, etc).
     async fn refresh(&self) -> Result<(), Error>;
-
-    /// Default endpoint filters (if any).
-    fn default_filters(&self) -> Option<&EndpointFilters> {
-        None
-    }
 }
 
 /// Authentication type that provides no authentication.

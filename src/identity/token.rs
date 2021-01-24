@@ -20,7 +20,7 @@ use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
 use super::internal::Internal;
 use super::protocol;
 use super::{IdOrName, Identity, Scope};
-use crate::{AuthType, EndpointFilters, Error, InterfaceType, ValidInterfaces};
+use crate::{AuthType, EndpointFilters, Error};
 
 /// Token authentication using Identity API V3.
 ///
@@ -88,29 +88,6 @@ impl Token {
         })
     }
 
-    /// Endpoint filters.
-    #[inline]
-    pub fn endpoint_filters(&self) -> &EndpointFilters {
-        &self.inner.filters
-    }
-
-    /// Mutable endpoint filters.
-    #[inline]
-    pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
-        &mut self.inner.filters
-    }
-
-    /// Set the default endpoint interface to use.
-    pub fn set_default_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
-        self.inner.filters.interfaces = ValidInterfaces::one(endpoint_interface);
-    }
-
-    /// Set endpoint filters.
-    #[inline]
-    pub fn set_endpoint_filters(&mut self, filters: EndpointFilters) {
-        self.inner.filters = filters;
-    }
-
     /// Scope authentication to the given project.
     ///
     /// A convenience wrapper around `set_scope`.
@@ -130,20 +107,6 @@ impl Token {
         self.inner.set_scope(scope);
     }
 
-    /// Convert this authentication into one using the given endpoint interface.
-    #[inline]
-    pub fn with_default_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> Self {
-        self.set_default_endpoint_interface(endpoint_interface);
-        self
-    }
-
-    /// Add endpoint filters.
-    #[inline]
-    pub fn with_endpoint_filters(mut self, filters: EndpointFilters) -> Self {
-        self.inner.filters = filters;
-        self
-    }
-
     /// Scope authentication to the given project.
     ///
     /// A convenience wrapper around `with_scope`.
@@ -154,16 +117,6 @@ impl Token {
         domain: impl Into<Option<IdOrName>>,
     ) -> Token {
         self.set_project_scope(project, domain);
-        self
-    }
-
-    /// Set a region for this authentication method.
-    #[inline]
-    pub fn with_region<S>(mut self, region: S) -> Self
-    where
-        S: Into<String>,
-    {
-        self.inner.filters.region = Some(region.into());
         self
     }
 
@@ -183,11 +136,6 @@ impl Token {
 
 #[async_trait]
 impl AuthType for Token {
-    /// Endpoint filters in use.
-    fn default_filters(&self) -> Option<&EndpointFilters> {
-        Some(&self.inner.filters)
-    }
-
     /// Create an authenticated request.
     async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
         self.inner.request(method, url).await
@@ -249,7 +197,6 @@ pub mod test {
             id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
-        assert_eq!(id.endpoint_filters().region, None);
     }
 
     #[test]
@@ -269,7 +216,6 @@ pub mod test {
             id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
-        assert_eq!(id.endpoint_filters().region, None);
     }
 
     #[test]
@@ -292,7 +238,6 @@ pub mod test {
             id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
-        assert_eq!(id.endpoint_filters().region, None);
     }
 
     #[test]
@@ -315,6 +260,5 @@ pub mod test {
             id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
         );
-        assert_eq!(id.endpoint_filters().region, None);
     }
 }

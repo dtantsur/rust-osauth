@@ -225,6 +225,7 @@ fn add_endpoint_override(session: &mut Session, key: String, value: String) -> R
 
 fn create_session<T: AuthType + 'static>(
     auth: T,
+    region_name: Option<String>,
     options: HashMap<String, serde_yaml::Value>,
 ) -> Result<Session, Error> {
     let mut result = Session::new(auth);
@@ -241,15 +242,12 @@ fn create_session<T: AuthType + 'static>(
             }
         }
     }
+    result.endpoint_filters_mut().region = region_name;
 
     Ok(result)
 }
 
-fn password_auth_from_cloud(
-    client: Client,
-    auth: Auth,
-    region_name: Option<String>,
-) -> Result<Password, Error> {
+fn password_auth_from_cloud(client: Client, auth: Auth) -> Result<Password, Error> {
     let user_domain = auth
         .user_domain_name
         .unwrap_or_else(|| String::from("Default"));
@@ -281,9 +279,6 @@ fn password_auth_from_cloud(
             domain: Some(IdOrName::Name(project_domain)),
         };
         id.set_scope(scope);
-    }
-    if let Some(region) = region_name {
-        id.endpoint_filters_mut().region = Some(region);
     }
 
     Ok(id)
@@ -351,7 +346,11 @@ fn from_files(
     let client = loading::get_client(cloud.cacert)?;
 
     if auth_type == "none" {
-        return create_session(none_auth_from_cloud(client, cloud.auth)?, cloud.options);
+        return create_session(
+            none_auth_from_cloud(client, cloud.auth)?,
+            cloud.region_name,
+            cloud.options,
+        );
     }
 
     let auth = cloud.auth.ok_or_else(|| {
@@ -363,10 +362,15 @@ fn from_files(
 
     match auth_type.as_str() {
         "password" => create_session(
-            password_auth_from_cloud(client, auth, cloud.region_name)?,
+            password_auth_from_cloud(client, auth)?,
+            cloud.region_name,
             cloud.options,
         ),
-        "http_basic" => create_session(basic_auth_from_cloud(client, auth)?, cloud.options),
+        "http_basic" => create_session(
+            basic_auth_from_cloud(client, auth)?,
+            cloud.region_name,
+            cloud.options,
+        ),
         _ => Err(Error::new(
             ErrorKind::InvalidConfig,
             format!("Unsupported authentication type: {}", auth_type),
