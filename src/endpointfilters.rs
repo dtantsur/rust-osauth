@@ -20,11 +20,8 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::str::FromStr;
 
-use log::{debug, error};
-use reqwest::Url;
-
 use super::{Error, ErrorKind};
-use crate::identity::protocol::{CatalogRecord, Endpoint};
+use crate::identity::protocol::Endpoint;
 
 /// Interface type: public, internal or admin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -188,11 +185,6 @@ impl ValidInterfaces {
         self.len = other.len;
     }
 
-    /// Whether the interfaces match the provided endpoint.
-    pub fn check(&self, endpoint: &Endpoint) -> bool {
-        self.find(&endpoint.interface).is_some()
-    }
-
     /// One valid interface.
     #[inline]
     pub fn one(item: InterfaceType) -> ValidInterfaces {
@@ -226,8 +218,13 @@ impl ValidInterfaces {
     }
 
     #[inline]
-    fn find(&self, interface: &str) -> Option<usize> {
+    pub(crate) fn find(&self, interface: &str) -> Option<usize> {
         self.iter().position(|x| x == &interface)
+    }
+
+    /// Whether the interfaces match the provided endpoint.
+    pub(crate) fn check(&self, endpoint: &Endpoint) -> bool {
+        self.find(&endpoint.interface).is_some()
     }
 }
 
@@ -275,27 +272,6 @@ impl EndpointFilters {
         }
     }
 
-    /// Extract a URL from the service catalog.
-    pub fn find_in_catalog(
-        &self,
-        catalog: &[CatalogRecord],
-        service_type: &str,
-    ) -> Result<Url, Error> {
-        let endp = self.find_endpoint(catalog, service_type)?;
-        debug!("Received {:?} for {}", endp, service_type);
-        Url::parse(&endp.url).map_err(|e| {
-            error!(
-                "Invalid URL {} received from service catalog for service \
-                 '{}', filters {:?}: {}",
-                endp.url, service_type, self, e
-            );
-            Error::new(
-                ErrorKind::InvalidResponse,
-                format!("Invalid URL {} for {} - {}", endp.url, service_type, e),
-            )
-        })
-    }
-
     /// Set one or more valid interfaces.
     ///
     /// Hint: because of the generic argument can be used with one `InterfaceType` as well.
@@ -325,27 +301,6 @@ impl EndpointFilters {
         self.set_region(value);
         self
     }
-
-    /// Find an endpoint in the service catalog.
-    pub(crate) fn find_endpoint<'c>(
-        &self,
-        catalog: &'c [CatalogRecord],
-        service_type: &str,
-    ) -> Result<&'c Endpoint, Error> {
-        let svc = match catalog.iter().find(|x| x.service_type == *service_type) {
-            Some(s) => s,
-            None => return Err(Error::new_endpoint_not_found(service_type)),
-        };
-
-        let mut endpoints: Vec<_> = svc.endpoints.iter().filter(|x| self.check(x)).collect();
-        endpoints
-            // NOTE(dtantsur): because of the filter above unwrap never fails
-            .sort_unstable_by_key(|x| self.interfaces.find(&x.interface).unwrap());
-        endpoints
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::new_endpoint_not_found(service_type))
-    }
 }
 
 #[cfg(test)]
@@ -353,142 +308,8 @@ pub mod test {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    use super::{EndpointFilters, InterfaceType, ValidInterfaces};
-    use crate::identity::protocol::{CatalogRecord, Endpoint};
-    use crate::{Error, ErrorKind};
+    use super::{InterfaceType, ValidInterfaces};
     use InterfaceType::*;
-
-    fn demo_service1() -> CatalogRecord {
-        CatalogRecord {
-            service_type: String::from("identity"),
-            endpoints: vec![
-                Endpoint {
-                    interface: String::from("public"),
-                    region: String::from("RegionOne"),
-                    url: String::from("https://host.one/identity"),
-                },
-                Endpoint {
-                    interface: String::from("internal"),
-                    region: String::from("RegionOne"),
-                    url: String::from("http://192.168.22.1/identity"),
-                },
-                Endpoint {
-                    interface: String::from("public"),
-                    region: String::from("RegionTwo"),
-                    url: String::from("https://host.two:5000"),
-                },
-            ],
-        }
-    }
-
-    fn demo_service2() -> CatalogRecord {
-        CatalogRecord {
-            service_type: String::from("baremetal"),
-            endpoints: vec![
-                Endpoint {
-                    interface: String::from("public"),
-                    region: String::from("RegionOne"),
-                    url: String::from("https://host.one/baremetal"),
-                },
-                Endpoint {
-                    interface: String::from("public"),
-                    region: String::from("RegionTwo"),
-                    url: String::from("https://host.two:6385"),
-                },
-            ],
-        }
-    }
-
-    pub fn demo_catalog() -> Vec<CatalogRecord> {
-        vec![demo_service1(), demo_service2()]
-    }
-
-    fn find_endpoint<'a>(
-        cat: &'a Vec<CatalogRecord>,
-        service_type: &str,
-        interface_type: InterfaceType,
-        region: Option<&str>,
-    ) -> Result<&'a Endpoint, Error> {
-        EndpointFilters {
-            interfaces: ValidInterfaces::one(interface_type),
-            region: region.map(|x| x.to_string()),
-        }
-        .find_endpoint(cat, service_type)
-    }
-
-    #[test]
-    fn test_find_endpoint() {
-        let cat = demo_catalog();
-
-        let e1 = find_endpoint(&cat, "identity", Public, None).unwrap();
-        assert_eq!(&e1.url, "https://host.one/identity");
-
-        let e2 = find_endpoint(&cat, "identity", Internal, None).unwrap();
-        assert_eq!(&e2.url, "http://192.168.22.1/identity");
-
-        let e3 = find_endpoint(&cat, "baremetal", Public, None).unwrap();
-        assert_eq!(&e3.url, "https://host.one/baremetal");
-    }
-
-    #[test]
-    fn test_find_endpoint_from_many() {
-        let cat = demo_catalog();
-        let service_type = "identity";
-
-        let e1 = EndpointFilters::default()
-            .with_interfaces(vec![Public, Internal])
-            .find_endpoint(&cat, service_type)
-            .unwrap();
-        assert_eq!(&e1.url, "https://host.one/identity");
-
-        let e2 = EndpointFilters::default()
-            .with_interfaces(vec![Admin, Internal, Public])
-            .find_endpoint(&cat, service_type)
-            .unwrap();
-        assert_eq!(&e2.url, "http://192.168.22.1/identity");
-
-        let e3 = EndpointFilters::default()
-            .with_interfaces(vec![Admin, Public])
-            .find_endpoint(&cat, service_type)
-            .unwrap();
-        assert_eq!(&e3.url, "https://host.one/identity");
-    }
-
-    #[test]
-    fn test_find_endpoint_with_region() {
-        let cat = demo_catalog();
-
-        let e1 = find_endpoint(&cat, "identity", Public, Some("RegionTwo")).unwrap();
-        assert_eq!(&e1.url, "https://host.two:5000");
-
-        let e2 = find_endpoint(&cat, "identity", Internal, Some("RegionOne")).unwrap();
-        assert_eq!(&e2.url, "http://192.168.22.1/identity");
-
-        let e3 = find_endpoint(&cat, "baremetal", Public, Some("RegionTwo")).unwrap();
-        assert_eq!(&e3.url, "https://host.two:6385");
-    }
-
-    fn assert_not_found(result: Result<&Endpoint, Error>) {
-        let err = result.err().unwrap();
-        if err.kind() != ErrorKind::EndpointNotFound {
-            panic!("Unexpected error {}", err);
-        }
-    }
-
-    #[test]
-    fn test_find_endpoint_not_found() {
-        let cat = demo_catalog();
-
-        assert_not_found(find_endpoint(&cat, "foobar", Public, None));
-        assert_not_found(find_endpoint(&cat, "identity", Public, Some("RegionFoo")));
-        assert_not_found(find_endpoint(&cat, "baremetal", Internal, None));
-        assert_not_found(find_endpoint(&cat, "identity", Internal, Some("RegionTwo")));
-
-        let e1 = EndpointFilters::default()
-            .with_interfaces(vec![Admin, Internal])
-            .find_endpoint(&cat, "baremetal");
-        assert_not_found(e1);
-    }
 
     #[test]
     fn test_valid_interfaces_basics() {

@@ -19,13 +19,14 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use chrono::{Duration, Local};
+use chrono::{DateTime, Duration, FixedOffset, Local};
 use log::{debug, error, trace};
 use reqwest::{Client, Response, Url};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use super::protocol::{self, AuthRoot};
 use super::{IdOrName, Scope, INVALID_SUBJECT_HEADER, MISSING_SUBJECT_HEADER, TOKEN_MIN_VALIDITY};
+use crate::catalog::ServiceCatalog;
 use crate::client::{self, RequestBuilder};
 use crate::{EndpointFilters, Error, ErrorKind};
 
@@ -33,8 +34,11 @@ use crate::{EndpointFilters, Error, ErrorKind};
 #[derive(Clone)]
 pub(crate) struct Token {
     value: String,
-    body: protocol::Token,
+    expires_at: DateTime<FixedOffset>,
+    catalog: ServiceCatalog,
 }
+
+static_assertions::assert_eq_size!(Option<Token>, Token);
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -42,9 +46,9 @@ impl fmt::Debug for Token {
         self.value.hash(&mut hasher);
         write!(
             f,
-            "Token {{ value: hash({}), body: {:?} }}",
+            "Token {{ value: hash({}), catalog: {:?} }}",
             hasher.finish(),
-            self.body
+            self.catalog
         )
     }
 }
@@ -102,7 +106,7 @@ impl Internal {
             service_type, filters
         );
         let token = self.cached_token(client).await?;
-        filters.find_in_catalog(&token.body.catalog, &service_type)
+        token.catalog.find_endpoint(&service_type, &filters)
     }
 
     /// Get the authentication token string.
@@ -192,7 +196,7 @@ impl Clone for Internal {
 #[inline]
 fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
     if let Some(value) = token.deref() {
-        let validity_time_left = value.body.expires_at.signed_duration_since(Local::now());
+        let validity_time_left = value.expires_at.signed_duration_since(Local::now());
         trace!("Token is valid for {:?}", validity_time_left);
         validity_time_left > Duration::minutes(TOKEN_MIN_VALIDITY)
     } else {
@@ -231,6 +235,7 @@ async fn token_from_response(resp: Response) -> Result<Token, Error> {
     trace!("Received catalog: {:?}", root.token.catalog);
     Ok(Token {
         value,
-        body: root.token,
+        expires_at: root.token.expires_at,
+        catalog: ServiceCatalog::new(root.token.catalog),
     })
 }
