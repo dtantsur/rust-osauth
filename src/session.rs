@@ -17,22 +17,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[cfg(feature = "stream")]
-use futures::Stream;
 use log::{debug, trace};
 use reqwest::header::HeaderMap;
-use reqwest::{Client, Method, RequestBuilder, Response, Url};
+use reqwest::{Client, Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
-use super::client::AuthenticatedClient;
+use super::client::{AuthenticatedClient, RequestBuilder};
 use super::loading;
 use super::protocol::ServiceInfo;
-use super::request;
 use super::services::ServiceType;
-#[cfg(feature = "stream")]
-use super::stream::{paginated, Resource};
 use super::url;
 use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
 
@@ -439,11 +434,8 @@ impl Session {
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let session = osauth::Session::from_env()
     ///     .expect("Failed to create an identity provider from the environment");
-    /// let response = osauth::request::send_checked(
-    ///     session
-    ///         .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"], None)
-    ///         .await?
-    ///     )
+    /// let response = session
+    ///     .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"], None)
     ///     .await?;
     /// println!("Response: {:?}", response);
     /// # Ok(()) }
@@ -482,7 +474,7 @@ impl Session {
         Ok(builder)
     }
 
-    /// Issue a GET request.
+    /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
@@ -491,18 +483,14 @@ impl Session {
         service: Srv,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        request::send_checked(
-            self.request(service, Method::GET, path, api_version)
-                .await?,
-        )
-        .await
+        self.request(service, Method::GET, path, api_version).await
     }
 
     /// Fetch a JSON using the GET request.
@@ -546,192 +534,44 @@ impl Session {
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        request::fetch_json(
-            self.request(service, Method::GET, path, api_version)
-                .await?,
-        )
-        .await
-    }
-
-    /// Fetch a paginated list of JSON objects using the GET request.
-    ///
-    /// ```rust,no_run
-    /// # async fn example() -> Result<(), osauth::Error> {
-    /// use futures::pin_mut;
-    /// use futures::stream::TryStreamExt;
-    /// use serde::Deserialize;
-    ///
-    /// #[derive(Debug, Deserialize)]
-    /// pub struct Server {
-    ///     pub id: String,
-    ///     pub name: String,
-    /// }
-    ///
-    /// #[derive(Debug, Deserialize)]
-    /// pub struct ServersRoot {
-    ///     pub servers: Vec<Server>,
-    /// }
-    ///
-    /// // This implementatin defines the relationship between the root resource and its items.
-    /// impl osauth::stream::Resource for Server {
-    ///     type Id = String;
-    ///     type Root = ServersRoot;
-    ///     fn resource_id(&self) -> Self::Id {
-    ///         self.id.clone()
-    ///     }
-    /// }
-    ///
-    /// // This is another required part of the pagination contract.
-    /// impl From<ServersRoot> for Vec<Server> {
-    ///     fn from(value: ServersRoot) -> Vec<Server> {
-    ///         value.servers
-    ///     }
-    /// }
-    ///
-    /// let session = osauth::Session::from_env()
-    ///     .expect("Failed to create an identity provider from the environment");
-    ///
-    /// let servers = session
-    ///     .get_json_paginated::<_, _, Server>(
-    ///         osauth::services::COMPUTE,
-    ///         &["servers"],
-    ///         None,
-    ///         None,
-    ///         None
-    ///     )
-    ///     .await?;
-    ///
-    /// pin_mut!(servers);
-    /// while let Some(srv) = servers.try_next().await? {
-    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
-    /// }
-    /// # Ok(()) }
-    /// # #[tokio::main]
-    /// # async fn main() { example().await.unwrap(); }
-    /// ```
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[cfg(feature = "stream")]
-    pub async fn get_json_paginated<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-        limit: Option<usize>,
-        starting_with: Option<<T as Resource>::Id>,
-    ) -> Result<impl Stream<Item = Result<T, Error>>, Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        T: Resource + Unpin,
-        <T as Resource>::Root: Into<Vec<T>> + Send,
-    {
-        let builder = self
-            .request(service, Method::GET, path, api_version)
-            .await?;
-        Ok(paginated(builder, limit, starting_with))
-    }
-
-    /// Fetch a JSON using the GET request with a query.
-    ///
-    /// See `reqwest` crate documentation for how to define a query.
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub async fn get_json_query<Srv, I, Q, T>(
-        &self,
-        service: Srv,
-        path: I,
-        query: Q,
-        api_version: Option<ApiVersion>,
-    ) -> Result<T, Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        Q: Serialize + Send,
-        T: DeserializeOwned + Send,
-    {
-        request::fetch_json(
-            self.request(service, Method::GET, path, api_version)
-                .await?
-                .query(&query),
-        )
-        .await
-    }
-
-    /// Fetch a paginated list of JSON objects using the GET request with a query.
-    ///
-    /// See `reqwest` crate documentation for how to define a query.
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[cfg(feature = "stream")]
-    pub async fn get_json_query_paginated<Srv, I, Q, T>(
-        &self,
-        service: Srv,
-        path: I,
-        query: Q,
-        api_version: Option<ApiVersion>,
-        limit: Option<usize>,
-        starting_with: Option<<T as Resource>::Id>,
-    ) -> Result<impl Stream<Item = Result<T, Error>>, Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        Q: Serialize + Send,
-        T: Resource + Unpin,
-        <T as Resource>::Root: Into<Vec<T>> + Send,
-    {
-        let builder = self
-            .request(service, Method::GET, path, api_version)
+        self.request(service, Method::GET, path, api_version)
             .await?
-            .query(&query);
-        Ok(paginated(builder, limit, starting_with))
+            .fetch_json()
+            .await
     }
 
-    /// Issue a GET request with a query
+    /// Start a POST request.
     ///
-    /// See `reqwest` crate documentation for how to define a query.
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get_query<Srv, I, Q>(
+    pub async fn post<Srv, I>(
         &self,
         service: Srv,
         path: I,
-        query: Q,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
-        Q: Serialize + Send,
     {
-        request::send_checked(
-            self.request(service, Method::GET, path, api_version)
-                .await?
-                .query(&query),
-        )
-        .await
+        self.request(service, Method::POST, path, api_version).await
     }
 
-    /// POST a JSON object.
+    /// Start a POST request with a JSON body
     ///
     /// The `body` argument is anything that can be serialized into JSON.
     ///
-    /// See [request](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<Srv, I, T>(
+    pub async fn post_json<Srv, I, T>(
         &self,
         service: Srv,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -739,69 +579,26 @@ impl Session {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        request::send_checked(
-            self.request(service, Method::POST, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
+        Ok(self.post(service, path, api_version).await?.json(&body))
     }
 
-    /// POST a JSON object and receive a JSON back.
+    /// Start a PUT request.
     ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post_json<Srv, I, T, R>(
+    pub async fn put<Srv, I>(
         &self,
         service: Srv,
         path: I,
-        body: T,
         api_version: Option<ApiVersion>,
-    ) -> Result<R, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
-        T: Serialize + Send,
-        R: DeserializeOwned + Send,
     {
-        request::fetch_json(
-            self.request(service, Method::POST, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
-    }
-
-    /// PUT a JSON object.
-    ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
-    #[inline]
-    pub async fn put<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        T: Serialize + Send,
-    {
-        request::send_checked(
-            self.request(service, Method::PUT, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
+        self.request(service, Method::PUT, path, api_version).await
     }
 
     /// Issue an empty PUT request.
@@ -813,50 +610,44 @@ impl Session {
         service: Srv,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<(), Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        request::send_checked(
-            self.request(service, Method::PUT, path, api_version)
-                .await?,
-        )
-        .await
+        self.request(service, Method::PUT, path, api_version)
+            .await?
+            .send()
+            .await
+            .map(|_| ())
     }
 
-    /// PUT a JSON object and receive a JSON back.
+    /// Start a PUT request with a JSON body.
     ///
     /// The `body` argument is anything that can be serialized into JSON.
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn put_json<Srv, I, T, R>(
+    pub async fn put_json<Srv, I, T>(
         &self,
         service: Srv,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> Result<R, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
-        R: DeserializeOwned + Send,
     {
-        request::fetch_json(
-            self.request(service, Method::PUT, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
+        Ok(self.put(service, path, api_version).await?.json(&body))
     }
 
-    /// Issue a DELETE request.
+    /// Start a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
@@ -865,18 +656,15 @@ impl Session {
         service: Srv,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        request::send_checked(
-            self.request(service, Method::DELETE, path, api_version)
-                .await?,
-        )
-        .await
+        self.request(service, Method::DELETE, path, api_version)
+            .await
     }
 
     /// Ensure service info and return the cache.

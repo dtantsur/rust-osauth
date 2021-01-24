@@ -24,7 +24,6 @@ use serde::Deserialize;
 
 use super::client::AuthenticatedClient;
 use super::common::Version;
-use super::request;
 use super::services::ServiceType;
 use super::url;
 use super::{ApiVersion, Error, ErrorKind};
@@ -156,7 +155,11 @@ async fn fetch_root(
     client: &AuthenticatedClient,
 ) -> Result<Root, Error> {
     debug!("Fetching {} service info from {}", catalog_type, endpoint);
-    request::fetch_json(client.request(Method::GET, endpoint).await?).await
+    client
+        .request(Method::GET, endpoint)
+        .await?
+        .fetch_json()
+        .await
 }
 
 impl ServiceInfo {

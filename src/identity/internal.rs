@@ -21,12 +21,13 @@ use std::ops::Deref;
 
 use chrono::{Duration, Local};
 use log::{debug, error, trace};
-use reqwest::{Client, RequestBuilder, Response, Url};
+use reqwest::{Client, Response, Url};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use super::protocol::{self, AuthRoot};
 use super::{IdOrName, Scope, INVALID_SUBJECT_HEADER, MISSING_SUBJECT_HEADER, TOKEN_MIN_VALIDITY};
-use crate::{request, EndpointFilters, Error, ErrorKind};
+use crate::client::{self, RequestBuilder};
+use crate::{EndpointFilters, Error, ErrorKind};
 
 /// Plain authentication token without additional details.
 #[derive(Clone)]
@@ -162,12 +163,12 @@ impl Internal {
             .json(&self.body)
             .send()
             .await?;
-        *lock = Some(token_from_response(request::check(resp).await?).await?);
+        *lock = Some(token_from_response(client::check(resp).await?).await?);
         Ok(())
     }
 
     /// Create an authenticated request.
-    pub async fn request(
+    pub async fn authenticate(
         &self,
         client: &Client,
         request: RequestBuilder,

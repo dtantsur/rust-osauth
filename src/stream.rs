@@ -19,15 +19,14 @@ use std::fmt::Debug;
 use async_stream::try_stream;
 use futures::pin_mut;
 use futures::stream::{Stream, TryStreamExt};
-use reqwest::RequestBuilder;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::request;
+use super::client::RequestBuilder;
 use super::Error;
 
 /// A single resource.
-pub trait Resource {
+pub trait PaginatedResource {
     /// Type of an ID.
     type Id: Debug + Serialize;
 
@@ -52,7 +51,7 @@ fn chunks<T>(
     starting_with: Option<T::Id>,
 ) -> impl Stream<Item = Result<Vec<T>, Error>>
 where
-    T: Resource + Unpin,
+    T: PaginatedResource + Unpin,
     T::Root: Into<Vec<T>> + Send,
 {
     let mut marker = starting_with;
@@ -63,7 +62,7 @@ where
                 .try_clone()
                 .expect("Builder with a streaming body cannot be used")
                 .query(&Query{ limit: limit, marker: marker.take() });
-            let result: T::Root = request::fetch_json(prepared).await?;
+            let result: T::Root = prepared.fetch_json().await?;
             let items = result.into();
             if let Some(new_m) = items.last() {
                 marker = Some(new_m.resource_id());
@@ -80,13 +79,13 @@ where
 /// # Panics
 ///
 /// Will panic during iteration if the request builder has a streaming body.
-pub fn paginated<T>(
+pub(crate) fn paginated<T>(
     builder: RequestBuilder,
     limit: Option<usize>,
     starting_with: Option<T::Id>,
 ) -> impl Stream<Item = Result<T, Error>>
 where
-    T: Resource + Unpin,
+    T: PaginatedResource + Unpin,
     T::Root: Into<Vec<T>> + Send,
 {
     try_stream! {

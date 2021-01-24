@@ -27,9 +27,12 @@ async fn main() {
 
     println!("Writing {} to rust-osauth-test/test-object", DATA);
     adapter
-        .put(&["rust-osauth-test", "test-object"], DATA, None)
+        .put_json(&["rust-osauth-test", "test-object"], DATA, None)
         .await
-        .expect("Failed to upload an object");
+        .expect("Failed to start a PUT request")
+        .send()
+        .await
+        .expect("Failed to save an object");
 
     let res: u8 = adapter
         .get_json(&["rust-osauth-test", "test-object"], None)

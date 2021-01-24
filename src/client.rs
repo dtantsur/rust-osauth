@@ -14,11 +14,38 @@
 
 //! Low-level authenticated client.
 
+use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::sync::Arc;
+use std::time::Duration;
 
-use reqwest::{Client, Method, RequestBuilder, Url};
+#[cfg(feature = "stream")]
+use futures::Stream;
+use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::Error as HttpError;
+use log::trace;
+use reqwest::{Body, Client, Method, RequestBuilder as HttpRequestBuilder, Response, Url};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "stream")]
+use super::stream::paginated;
+#[cfg(feature = "stream")]
+pub use super::stream::PaginatedResource;
 use super::{AuthType, EndpointFilters, Error};
+
+/// A properly typed constant for use with root paths.
+///
+/// The problem with just using `None` is that the exact type of `Option` is not known.
+///
+/// An example:
+///
+/// ```rust,no_run
+/// let session = osauth::Session::from_env()
+///     .expect("Failed to create an identity provider from the environment");
+/// let future = session.get(osauth::services::OBJECT_STORAGE, osauth::client::NO_PATH, None);
+/// ```
+pub const NO_PATH: Option<&'static str> = None;
 
 /// Authenticated HTTP client.
 ///
@@ -89,7 +116,10 @@ impl AuthenticatedClient {
     #[inline]
     pub async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
         self.auth
-            .authenticate(&self.client, self.client.request(method, url))
+            .authenticate(
+                &self.client,
+                RequestBuilder::new(self.client.request(method, url)),
+            )
             .await
     }
 }
@@ -97,5 +127,223 @@ impl AuthenticatedClient {
 impl From<AuthenticatedClient> for Client {
     fn from(value: AuthenticatedClient) -> Client {
         value.client
+    }
+}
+
+/// A request builder with error handling.
+#[derive(Debug)]
+#[must_use = "preparing a request is not enough to run it"]
+pub struct RequestBuilder {
+    inner: HttpRequestBuilder,
+}
+
+impl From<HttpRequestBuilder> for RequestBuilder {
+    fn from(value: HttpRequestBuilder) -> RequestBuilder {
+        RequestBuilder { inner: value }
+    }
+}
+
+impl From<RequestBuilder> for HttpRequestBuilder {
+    fn from(value: RequestBuilder) -> HttpRequestBuilder {
+        value.inner
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct Message {
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ErrorResponse {
+    Map(HashMap<String, Message>),
+    Message(Message),
+}
+
+async fn extract_message(resp: Response) -> Result<String, Error> {
+    let text = resp.text().await?;
+    Ok(serde_json::from_str::<ErrorResponse>(&text)
+        .ok()
+        .and_then(|body| match body {
+            ErrorResponse::Map(map) => map.into_iter().next().map(|(_k, v)| v.message),
+            ErrorResponse::Message(msg) => Some(msg.message),
+        })
+        .unwrap_or(text))
+}
+
+/// Check for OpenStack errors in the response.
+pub async fn check(response: Response) -> Result<Response, Error> {
+    let status = response.status();
+    if status.is_client_error() || status.is_server_error() {
+        let message = extract_message(response).await?;
+        trace!("HTTP request returned {}; error: {:?}", status, message);
+        Err(Error::new(status.into(), message).with_status(status))
+    } else {
+        trace!(
+            "HTTP request to {} returned {}",
+            response.url(),
+            response.status()
+        );
+        Ok(response)
+    }
+}
+
+impl RequestBuilder {
+    #[inline]
+    fn new(inner: HttpRequestBuilder) -> RequestBuilder {
+        RequestBuilder { inner }
+    }
+
+    /// Add a body to the request.
+    pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder {
+        RequestBuilder {
+            inner: self.inner.body(body),
+        }
+    }
+
+    /// Add a header to the request.
+    pub fn header<K, V>(self, key: K, value: V) -> RequestBuilder
+    where
+        HeaderName: TryFrom<K>,
+        <HeaderName as TryFrom<K>>::Error: Into<HttpError>,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<HttpError>,
+    {
+        RequestBuilder {
+            inner: self.inner.header(key, value),
+        }
+    }
+
+    /// Add headers to a request.
+    pub fn headers(self, headers: HeaderMap) -> RequestBuilder {
+        RequestBuilder {
+            inner: self.inner.headers(headers),
+        }
+    }
+
+    /// Add a JSON body to the request.
+    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> RequestBuilder {
+        RequestBuilder {
+            inner: self.inner.json(json),
+        }
+    }
+
+    /// Send a query with the request.
+    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder {
+        RequestBuilder {
+            inner: self.inner.query(query),
+        }
+    }
+
+    /// Override the timeout for the request.
+    pub fn timeout(self, timeout: Duration) -> RequestBuilder {
+        RequestBuilder {
+            inner: self.inner.timeout(timeout),
+        }
+    }
+
+    /// Send the request and receive JSON in response.
+    pub async fn fetch_json<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned + Send,
+    {
+        self.send().await?.json::<T>().await.map_err(Error::from)
+    }
+
+    /// Send the request and receive JSON in response with pagination.
+    ///
+    /// Note that the actual requests will happen only on iteration over the results.
+    ///
+    /// ```rust,no_run
+    /// # async fn example() -> Result<(), osauth::Error> {
+    /// use futures::pin_mut;
+    /// use futures::stream::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct Server {
+    ///     pub id: String,
+    ///     pub name: String,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct ServersRoot {
+    ///     pub servers: Vec<Server>,
+    /// }
+    ///
+    /// // This implementatin defines the relationship between the root resource and its items.
+    /// impl osauth::client::PaginatedResource for Server {
+    ///     type Id = String;
+    ///     type Root = ServersRoot;
+    ///     fn resource_id(&self) -> Self::Id {
+    ///         self.id.clone()
+    ///     }
+    /// }
+    ///
+    /// // This is another required part of the pagination contract.
+    /// impl From<ServersRoot> for Vec<Server> {
+    ///     fn from(value: ServersRoot) -> Vec<Server> {
+    ///         value.servers
+    ///     }
+    /// }
+    ///
+    /// let session = osauth::Session::from_env()
+    ///     .expect("Failed to create an identity provider from the environment");
+    ///
+    /// let servers = session
+    ///     .get(
+    ///         osauth::services::COMPUTE,
+    ///         &["servers"],
+    ///         None,
+    ///     )
+    ///     .await?
+    ///     .fetch_json_paginated::<Server>(None, None)
+    ///     .await;
+    ///
+    /// pin_mut!(servers);
+    /// while let Some(srv) = servers.try_next().await? {
+    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
+    /// }
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Will panic during iteration if the request builder has a streaming body.
+    #[cfg(feature = "stream")]
+    pub async fn fetch_json_paginated<T>(
+        self,
+        limit: Option<usize>,
+        starting_with: Option<<T as PaginatedResource>::Id>,
+    ) -> impl Stream<Item = Result<T, Error>>
+    where
+        T: PaginatedResource + Unpin,
+        <T as PaginatedResource>::Root: Into<Vec<T>> + Send,
+    {
+        paginated(self, limit, starting_with)
+    }
+
+    /// Send the request and check for errors.
+    pub async fn send(self) -> Result<Response, Error> {
+        check(self.send_unchecked().await?).await
+    }
+
+    /// Send the request without checking for HTTP and OpenStack errors.
+    pub async fn send_unchecked(self) -> Result<Response, Error> {
+        self.inner.send().await.map_err(Error::from)
+    }
+
+    /// Attempt to clone this request builder.
+    pub fn try_clone(&self) -> Option<RequestBuilder> {
+        self.inner.try_clone().map(RequestBuilder::new)
+    }
+
+    pub(crate) fn basic_auth(self, username: &String, password: &String) -> RequestBuilder {
+        RequestBuilder {
+            inner: self.inner.basic_auth(username, Some(password)),
+        }
     }
 }

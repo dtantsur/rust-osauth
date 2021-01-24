@@ -27,13 +27,13 @@ use futures::executor::{self, BlockingStream};
 use futures::stream::Stream;
 use futures::Future;
 use pin_project::pin_project;
-use reqwest::{Body, RequestBuilder, Response};
+use reqwest::{Body, Response};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::runtime::{self, Runtime};
 
-use super::request;
+use super::client::RequestBuilder;
 use super::services::ServiceType;
 use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
@@ -615,13 +615,13 @@ impl SyncSession {
     where
         T: DeserializeOwned + Send,
     {
-        self.block_on(async { request::to_json(builder.send().await?).await })
+        self.block_on(async { builder.fetch_json().await })
     }
 
     /// Check the response and convert errors into OpenStack ones.
     #[inline]
     pub fn send_checked(&self, builder: RequestBuilder) -> Result<Response> {
-        self.block_on(async { request::check(builder.send().await?).await })
+        self.block_on(async { builder.send().await })
     }
 
     #[inline]

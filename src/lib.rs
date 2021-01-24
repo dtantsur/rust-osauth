@@ -117,11 +117,10 @@ mod error;
 pub mod identity;
 mod loading;
 mod protocol;
-pub mod request;
 pub mod services;
 mod session;
 #[cfg(feature = "stream")]
-pub mod stream;
+mod stream;
 #[cfg(feature = "sync")]
 pub mod sync;
 mod url;

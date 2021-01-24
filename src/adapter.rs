@@ -14,17 +14,13 @@
 
 //! Adapter for a specific service.
 
-#[cfg(feature = "stream")]
-use futures::Stream;
-use reqwest::{Method, RequestBuilder, Response, Url};
+use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use super::client::RequestBuilder;
 use super::loading;
-use super::request;
 use super::services::ServiceType;
-#[cfg(feature = "stream")]
-use super::stream::{paginated, Resource};
 use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
 /// Adapter for a specific service.
@@ -279,11 +275,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
     ///     .expect("Failed to create an identity provider from the environment");
-    /// let response = osauth::request::send_checked(
-    ///     adapter
-    ///         .request(reqwest::Method::HEAD, &["servers", "1234"], None)
-    ///         .await?
-    ///     )
+    /// let response = adapter
+    ///     .request(reqwest::Method::HEAD, &["servers", "1234"], None)
     ///     .await?;
     /// println!("Response: {:?}", response);
     /// # Ok(()) }
@@ -310,17 +303,21 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
             .await
     }
 
-    /// Issue a GET request.
+    /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<I>(&self, path: I, api_version: Option<ApiVersion>) -> Result<Response, Error>
+    pub async fn get<I>(
+        &self,
+        path: I,
+        api_version: Option<ApiVersion>,
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        request::send_checked(self.request(Method::GET, path, api_version).await?).await
+        self.request(Method::GET, path, api_version).await
     }
 
     /// Fetch a JSON using the GET request.
@@ -362,157 +359,27 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        request::fetch_json(self.request(Method::GET, path, api_version).await?).await
-    }
-
-    /// Fetch a paginated list of JSON objects using the GET request.
-    ///
-    /// ```rust,no_run
-    /// # async fn example() -> Result<(), osauth::Error> {
-    /// use futures::pin_mut;
-    /// use futures::stream::TryStreamExt;
-    /// use serde::Deserialize;
-    ///
-    /// #[derive(Debug, Deserialize)]
-    /// pub struct Server {
-    ///     pub id: String,
-    ///     pub name: String,
-    /// }
-    ///
-    /// #[derive(Debug, Deserialize)]
-    /// pub struct ServersRoot {
-    ///     pub servers: Vec<Server>,
-    /// }
-    ///
-    /// // This implementatin defines the relationship between the root resource and its items.
-    /// impl osauth::stream::Resource for Server {
-    ///     type Id = String;
-    ///     type Root = ServersRoot;
-    ///     fn resource_id(&self) -> Self::Id {
-    ///         self.id.clone()
-    ///     }
-    /// }
-    ///
-    /// // This is another required part of the pagination contract.
-    /// impl From<ServersRoot> for Vec<Server> {
-    ///     fn from(value: ServersRoot) -> Vec<Server> {
-    ///         value.servers
-    ///     }
-    /// }
-    ///
-    /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
-    ///     .expect("Failed to create an identity provider from the environment");
-    ///
-    /// let servers = adapter
-    ///     .get_json_paginated::<_, Server>(&["servers"], None, None, None)
-    ///     .await?;
-    ///
-    /// pin_mut!(servers);
-    /// while let Some(srv) = servers.try_next().await? {
-    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
-    /// }
-    /// # Ok(()) }
-    /// # #[tokio::main]
-    /// # async fn main() { example().await.unwrap(); }
-    /// ```
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[cfg(feature = "stream")]
-    pub async fn get_json_paginated<I, T>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-        limit: Option<usize>,
-        starting_with: Option<<T as Resource>::Id>,
-    ) -> Result<impl Stream<Item = Result<T, Error>>, Error>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        T: Resource + Unpin,
-        <T as Resource>::Root: Into<Vec<T>> + Send,
-    {
-        let builder = self.request(Method::GET, path, api_version).await?;
-        Ok(paginated(builder, limit, starting_with))
-    }
-
-    /// Fetch a JSON using the GET request with a query.
-    ///
-    /// See `reqwest` crate documentation for how to define a query.
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub async fn get_json_query<I, Q, T>(
-        &self,
-        path: I,
-        query: Q,
-        api_version: Option<ApiVersion>,
-    ) -> Result<T, Error>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        Q: Serialize + Send,
-        T: DeserializeOwned + Send,
-    {
-        request::fetch_json(
-            self.request(Method::GET, path, api_version)
-                .await?
-                .query(&query),
-        )
-        .await
-    }
-
-    /// Fetch a paginated list of JSON objects using the GET request with a query.
-    ///
-    /// See `reqwest` crate documentation for how to define a query.
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[cfg(feature = "stream")]
-    pub async fn get_json_query_paginated<I, Q, T>(
-        &self,
-        path: I,
-        query: Q,
-        api_version: Option<ApiVersion>,
-        limit: Option<usize>,
-        starting_with: Option<<T as Resource>::Id>,
-    ) -> Result<impl Stream<Item = Result<T, Error>>, Error>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        Q: Serialize + Send,
-        T: Resource + Unpin,
-        <T as Resource>::Root: Into<Vec<T>> + Send,
-    {
-        let builder = self
-            .request(Method::GET, path, api_version)
+        self.request(Method::GET, path, api_version)
             .await?
-            .query(&query);
-        Ok(paginated(builder, limit, starting_with))
+            .fetch_json::<T>()
+            .await
     }
 
-    /// Issue a GET request with a query
+    /// Start a POST request.
     ///
-    /// See `reqwest` crate documentation for how to define a query.
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get_query<I, Q>(
+    pub async fn post<I>(
         &self,
         path: I,
-        query: Q,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
-        Q: Serialize + Send,
     {
-        request::send_checked(
-            self.request(Method::GET, path, api_version)
-                .await?
-                .query(&query),
-        )
-        .await
+        self.request(Method::POST, path, api_version).await
     }
 
     /// POST a JSON object.
@@ -521,51 +388,53 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn post<I, T>(
+    pub async fn post_json<I, T>(
         &self,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        request::send_checked(
-            self.request(Method::POST, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
+        Ok(self.post(path, api_version).await?.json(&body))
     }
 
-    /// POST a JSON object and receive a JSON back.
+    /// Start a PUT request.
     ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
+    /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post_json<I, T, R>(
+    pub async fn put<I>(
         &self,
         path: I,
-        body: T,
         api_version: Option<ApiVersion>,
-    ) -> Result<R, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
-        T: Serialize + Send,
-        R: DeserializeOwned + Send,
     {
-        request::fetch_json(
-            self.request(Method::POST, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
+        self.request(Method::PUT, path, api_version).await
+    }
+
+    /// Issue an empty PUT request.
+    ///
+    /// See [request](#method.request) for an explanation of the parameters.
+    #[inline]
+    pub async fn put_empty<I>(&self, path: I, api_version: Option<ApiVersion>) -> Result<(), Error>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        I::IntoIter: Send,
+    {
+        self.request(Method::PUT, path, api_version)
+            .await?
+            .send()
+            .await
+            .map(|_| ())
     }
 
     /// PUT a JSON object.
@@ -574,71 +443,22 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn put<I, T>(
+    pub async fn put_json<I, T>(
         &self,
         path: I,
         body: T,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        request::send_checked(
-            self.request(Method::PUT, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
+        Ok(self.put(path, api_version).await?.json(&body))
     }
 
-    /// Issue an empty PUT request.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub async fn put_empty<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-    {
-        request::send_checked(self.request(Method::PUT, path, api_version).await?).await
-    }
-
-    /// PUT a JSON object and receive a JSON back.
-    ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
-    #[inline]
-    pub async fn put_json<I, T, R>(
-        &self,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<R, Error>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-        I::IntoIter: Send,
-        T: Serialize + Send,
-        R: DeserializeOwned + Send,
-    {
-        request::fetch_json(
-            self.request(Method::PUT, path, api_version)
-                .await?
-                .json(&body),
-        )
-        .await
-    }
-
-    /// Issue a DELETE request.
+    /// Start a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
@@ -646,12 +466,12 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         &self,
         path: I,
         api_version: Option<ApiVersion>,
-    ) -> Result<Response, Error>
+    ) -> Result<RequestBuilder, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        request::send_checked(self.request(Method::DELETE, path, api_version).await?).await
+        self.request(Method::DELETE, path, api_version).await
     }
 }

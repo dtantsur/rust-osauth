@@ -36,7 +36,7 @@ impl From<ServersRoot> for Vec<Server> {
     }
 }
 
-impl osauth::stream::Resource for Server {
+impl osauth::client::PaginatedResource for Server {
     type Id = String;
     type Root = ServersRoot;
     fn resource_id(&self) -> Self::Id {
@@ -56,9 +56,11 @@ async fn main() {
     let adapter = session.adapter(osauth::services::COMPUTE);
 
     let sstream = adapter
-        .get_json_paginated::<_, Server>(&["servers"], None, limit, None)
+        .get(&["servers"], None)
         .await
-        .expect("Failed to start a GET request");
+        .expect("Failed to start a GET request")
+        .fetch_json_paginated::<Server>(limit, None)
+        .await;
     pin_mut!(sstream);
     while let Some(srv) = sstream
         .try_next()

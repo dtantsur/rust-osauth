@@ -15,11 +15,12 @@
 //! Token authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, RequestBuilder, Url};
+use reqwest::{Client, IntoUrl, Url};
 
 use super::internal::Internal;
 use super::protocol;
 use super::{IdOrName, Identity, Scope};
+use crate::client::RequestBuilder;
 use crate::{AuthType, EndpointFilters, Error};
 
 /// Token authentication using Identity API V3.
@@ -133,7 +134,7 @@ impl AuthType for Token {
         client: &Client,
         request: RequestBuilder,
     ) -> Result<RequestBuilder, Error> {
-        self.inner.request(client, request).await
+        self.inner.authenticate(client, request).await
     }
 
     /// Get a URL for the requested service.
