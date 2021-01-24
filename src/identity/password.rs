@@ -15,7 +15,7 @@
 //! Password authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
+use reqwest::{Client, IntoUrl, RequestBuilder, Url};
 
 use super::internal::Internal;
 use super::protocol;
@@ -104,29 +104,6 @@ impl Password {
         S2: Into<String>,
         S3: Into<String>,
     {
-        Password::new_with_client(
-            auth_url,
-            Client::new(),
-            user_name,
-            password,
-            user_domain_name,
-        )
-    }
-
-    /// Create a password authentication with the provided HTTP client.
-    pub fn new_with_client<U, S1, S2, S3>(
-        auth_url: U,
-        client: Client,
-        user_name: S1,
-        password: S2,
-        user_domain_name: S3,
-    ) -> Result<Password, Error>
-    where
-        U: IntoUrl,
-        S1: Into<String>,
-        S2: Into<String>,
-        S3: Into<String>,
-    {
         let auth_url = auth_url.into_url()?;
 
         let pw = protocol::UserAndPassword {
@@ -141,7 +118,7 @@ impl Password {
             },
         };
         Ok(Password {
-            inner: Internal::new(client, auth_url, body)?,
+            inner: Internal::new(auth_url, body)?,
         })
     }
 
@@ -199,23 +176,28 @@ impl Password {
 
 #[async_trait]
 impl AuthType for Password {
-    /// Create an authenticated request.
-    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
-        self.inner.request(method, url).await
+    /// Authenticate a request.
+    async fn authenticate(
+        &self,
+        client: &Client,
+        request: RequestBuilder,
+    ) -> Result<RequestBuilder, Error> {
+        self.inner.request(client, request).await
     }
 
     /// Get a URL for the requested service.
     async fn get_endpoint(
         &self,
+        client: &Client,
         service_type: String,
         filters: EndpointFilters,
     ) -> Result<Url, Error> {
-        self.inner.get_endpoint(service_type, filters).await
+        self.inner.get_endpoint(client, service_type, filters).await
     }
 
     /// Refresh the cached token and service catalog.
-    async fn refresh(&self) -> Result<(), Error> {
-        self.inner.refresh(true).await
+    async fn refresh(&self, client: &Client) -> Result<(), Error> {
+        self.inner.refresh(client, true).await
     }
 }
 

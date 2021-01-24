@@ -15,7 +15,7 @@
 //! HTTP basic authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
+use reqwest::{Client, IntoUrl, RequestBuilder, Url};
 
 use super::{AuthType, EndpointFilters, Error};
 
@@ -30,7 +30,6 @@ use super::{AuthType, EndpointFilters, Error};
 /// ```
 #[derive(Clone, Debug)]
 pub struct BasicAuth {
-    client: Client,
     endpoint: Url,
     username: String,
     password: String,
@@ -47,23 +46,7 @@ impl BasicAuth {
         S1: Into<String>,
         S2: Into<String>,
     {
-        Self::new_with_client(endpoint, Client::new(), username, password)
-    }
-
-    /// Create a new HTTP basic authentication method using a fixed endpoint and an HTTP client.
-    pub fn new_with_client<U, S1, S2>(
-        endpoint: U,
-        client: Client,
-        username: S1,
-        password: S2,
-    ) -> Result<BasicAuth, Error>
-    where
-        U: IntoUrl,
-        S1: Into<String>,
-        S2: Into<String>,
-    {
         Ok(BasicAuth {
-            client,
             endpoint: endpoint.into_url()?,
             username: username.into(),
             password: password.into(),
@@ -73,17 +56,19 @@ impl BasicAuth {
 
 #[async_trait]
 impl AuthType for BasicAuth {
-    /// Create a request.
-    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
-        Ok(self
-            .client
-            .request(method, url)
-            .basic_auth(&self.username, Some(&self.password)))
+    /// Authenticate a request.
+    async fn authenticate(
+        &self,
+        _client: &Client,
+        request: RequestBuilder,
+    ) -> Result<RequestBuilder, Error> {
+        Ok(request.basic_auth(&self.username, Some(&self.password)))
     }
 
     /// Get a predefined endpoint for all service types
     async fn get_endpoint(
         &self,
+        _client: &Client,
         _service_type: String,
         _filters: EndpointFilters,
     ) -> Result<Url, Error> {
@@ -91,7 +76,7 @@ impl AuthType for BasicAuth {
     }
 
     /// This call does nothing for `BasicAuth`.
-    async fn refresh(&self) -> Result<(), Error> {
+    async fn refresh(&self, _client: &Client) -> Result<(), Error> {
         Ok(())
     }
 }

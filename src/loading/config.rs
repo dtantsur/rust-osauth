@@ -224,11 +224,12 @@ fn add_endpoint_override(session: &mut Session, key: String, value: String) -> R
 }
 
 fn create_session<T: AuthType + 'static>(
+    client: Client,
     auth: T,
     region_name: Option<String>,
     options: HashMap<String, serde_yaml::Value>,
 ) -> Result<Session, Error> {
-    let mut result = Session::new(auth);
+    let mut result = Session::new_with_client(client, auth);
     for (key, value) in options {
         // TODO(dtantsur): replace with strip_suffix when no longer support rustc < 1.45.0
         if key.ends_with("_endpoint_override") {
@@ -247,7 +248,7 @@ fn create_session<T: AuthType + 'static>(
     Ok(result)
 }
 
-fn password_auth_from_cloud(client: Client, auth: Auth) -> Result<Password, Error> {
+fn password_auth_from_cloud(auth: Auth) -> Result<Password, Error> {
     let user_domain = auth
         .user_domain_name
         .unwrap_or_else(|| String::from("Default"));
@@ -272,7 +273,7 @@ fn password_auth_from_cloud(client: Client, auth: Auth) -> Result<Password, Erro
             "Identity authentication requires a password",
         )
     })?;
-    let mut id = Password::new_with_client(&auth_url, client, username, password, user_domain)?;
+    let mut id = Password::new(&auth_url, username, password, user_domain)?;
     if let Some(project_name) = auth.project_name {
         let scope = Scope::Project {
             project: IdOrName::Name(project_name),
@@ -284,7 +285,7 @@ fn password_auth_from_cloud(client: Client, auth: Auth) -> Result<Password, Erro
     Ok(id)
 }
 
-fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<BasicAuth, Error> {
+fn basic_auth_from_cloud(auth: Auth) -> Result<BasicAuth, Error> {
     let endpoint = auth.endpoint.ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidConfig,
@@ -304,18 +305,18 @@ fn basic_auth_from_cloud(client: Client, auth: Auth) -> Result<BasicAuth, Error>
         )
     })?;
 
-    BasicAuth::new_with_client(&endpoint, client, username, password)
+    BasicAuth::new(&endpoint, username, password)
 }
 
-fn none_auth_from_cloud(client: Client, auth: Option<Auth>) -> Result<NoAuth, Error> {
+fn none_auth_from_cloud(auth: Option<Auth>) -> Result<NoAuth, Error> {
     Ok(if let Some(auth) = auth {
         if let Some(endpoint) = auth.endpoint {
-            NoAuth::new_with_client(&endpoint, client)?
+            NoAuth::new(&endpoint)?
         } else {
-            NoAuth::new_without_endpoint(client)
+            NoAuth::new_without_endpoint()
         }
     } else {
-        NoAuth::new_without_endpoint(client)
+        NoAuth::new_without_endpoint()
     })
 }
 
@@ -347,7 +348,8 @@ fn from_files(
 
     if auth_type == "none" {
         return create_session(
-            none_auth_from_cloud(client, cloud.auth)?,
+            client,
+            none_auth_from_cloud(cloud.auth)?,
             cloud.region_name,
             cloud.options,
         );
@@ -362,12 +364,14 @@ fn from_files(
 
     match auth_type.as_str() {
         "password" => create_session(
-            password_auth_from_cloud(client, auth)?,
+            client,
+            password_auth_from_cloud(auth)?,
             cloud.region_name,
             cloud.options,
         ),
         "http_basic" => create_session(
-            basic_auth_from_cloud(client, auth)?,
+            client,
+            basic_auth_from_cloud(auth)?,
             cloud.region_name,
             cloud.options,
         ),

@@ -15,18 +15,18 @@
 //! Session structure definition.
 
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(feature = "stream")]
 use futures::Stream;
 use log::{debug, trace};
 use reqwest::header::HeaderMap;
-use reqwest::{Method, RequestBuilder, Response, Url};
+use reqwest::{Client, Method, RequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
+use super::client::AuthenticatedClient;
 use super::loading;
 use super::protocol::ServiceInfo;
 use super::request;
@@ -49,7 +49,7 @@ type Cache = HashMap<&'static str, ServiceInfo>;
 /// [with_auth_type](#method.with_auth_type) to detach a session.
 #[derive(Debug, Clone)]
 pub struct Session {
-    auth: Arc<dyn AuthType>,
+    client: AuthenticatedClient,
     cached_info: Arc<RwLock<Cache>>,
     endpoint_filters: EndpointFilters,
     endpoint_overrides: HashMap<String, Url>,
@@ -60,8 +60,15 @@ impl Session {
     ///
     /// The resulting session will use the default endpoint interface (usually, public).
     pub fn new<Auth: AuthType + 'static>(auth_type: Auth) -> Session {
+        Session::new_with_client(Client::new(), auth_type)
+    }
+
+    /// Create a new session with a given authentication plugin and an HTTP client.
+    ///
+    /// The resulting session will use the default endpoint interface (usually, public).
+    pub fn new_with_client<Auth: AuthType + 'static>(client: Client, auth_type: Auth) -> Session {
         Session {
-            auth: Arc::new(auth_type),
+            client: AuthenticatedClient::new(client, auth_type),
             cached_info: Arc::new(RwLock::new(HashMap::new())),
             endpoint_filters: EndpointFilters::default(),
             endpoint_overrides: HashMap::new(),
@@ -152,7 +159,13 @@ impl Session {
     /// Get a reference to the authentication type in use.
     #[inline]
     pub fn auth_type(&self) -> &dyn AuthType {
-        self.auth.as_ref()
+        self.client.auth_type()
+    }
+
+    /// Get a reference to the authenticated client in use.
+    #[inline]
+    pub fn client(&self) -> &AuthenticatedClient {
+        &self.client
     }
 
     /// Endpoint filters in use.
@@ -194,7 +207,7 @@ impl Session {
     #[inline]
     pub async fn refresh(&mut self) -> Result<(), Error> {
         self.reset_cache();
-        self.auth.refresh().await
+        self.client.refresh().await
     }
 
     /// Reset the internal cache.
@@ -210,7 +223,7 @@ impl Session {
     #[inline]
     pub fn set_auth_type<Auth: AuthType + 'static>(&mut self, auth_type: Auth) {
         self.reset_cache();
-        self.auth = Arc::new(auth_type);
+        self.client.set_auth_type(auth_type);
     }
 
     /// A convenience call to set an endpoint interface.
@@ -460,7 +473,7 @@ impl Session {
             url,
             api_version
         );
-        let mut builder = self.auth.request(method, url).await?;
+        let mut builder = self.client.request(method, url).await?;
         if let Some(version) = api_version {
             let mut headers = HeaderMap::new();
             service.set_api_version_headers(&mut headers, version)?;
@@ -892,12 +905,12 @@ impl Session {
             let ep = match self.endpoint_overrides.get(catalog_type) {
                 Some(found) => found.clone(),
                 None => {
-                    self.auth
+                    self.client
                         .get_endpoint(catalog_type.to_string(), self.endpoint_filters.clone())
                         .await?
                 }
             };
-            let info = ServiceInfo::fetch(service, ep, self.auth.deref()).await?;
+            let info = ServiceInfo::fetch(service, ep, &self.client).await?;
             let value = filter(&info);
             let _ = lock.insert(catalog_type, info);
             value

@@ -21,7 +21,7 @@ use std::ops::Deref;
 
 use chrono::{Duration, Local};
 use log::{debug, error, trace};
-use reqwest::{Client, Method, RequestBuilder, Response, Url};
+use reqwest::{Client, RequestBuilder, Response, Url};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 use super::protocol::{self, AuthRoot};
@@ -51,7 +51,6 @@ impl fmt::Debug for Token {
 /// Internal identity authentication object.
 #[derive(Debug)]
 pub(crate) struct Internal {
-    client: Client,
     auth_url: Url,
     body: AuthRoot,
     token_endpoint: String,
@@ -60,7 +59,7 @@ pub(crate) struct Internal {
 
 impl Internal {
     /// Create a new implementation.
-    pub fn new(client: Client, mut auth_url: Url, body: AuthRoot) -> Result<Internal, Error> {
+    pub fn new(mut auth_url: Url, body: AuthRoot) -> Result<Internal, Error> {
         let _ = auth_url
             .path_segments_mut()
             .map_err(|_| Error::new(ErrorKind::InvalidConfig, "Invalid auth_url: wrong schema?"))?
@@ -73,7 +72,6 @@ impl Internal {
         };
 
         Ok(Internal {
-            client,
             auth_url,
             body,
             token_endpoint,
@@ -88,8 +86,8 @@ impl Internal {
     }
 
     /// Access to the cached token.
-    pub async fn cached_token(&self) -> Result<RwLockReadGuard<'_, Token>, Error> {
-        self.refresh(false).await?;
+    pub async fn cached_token(&self, client: &Client) -> Result<RwLockReadGuard<'_, Token>, Error> {
+        self.refresh(client, false).await?;
         let guard = self.cached_token.read().await;
         // unwrap is safe because do_refresh unconditionally populates the token
         Ok(RwLockReadGuard::try_map(guard, |opt| opt.as_ref()).unwrap())
@@ -98,6 +96,7 @@ impl Internal {
     /// Get a URL for the requested service.
     pub async fn get_endpoint(
         &self,
+        client: &Client,
         service_type: String,
         filters: EndpointFilters,
     ) -> Result<Url, Error> {
@@ -105,14 +104,14 @@ impl Internal {
             "Requesting a catalog endpoint for service '{}', filters {:?}",
             service_type, filters
         );
-        let token = self.cached_token().await?;
+        let token = self.cached_token(client).await?;
         filters.find_in_catalog(&token.body.catalog, &service_type)
     }
 
     /// Get the authentication token string.
     #[inline]
-    pub async fn get_token(&self) -> Result<String, Error> {
-        let token = self.cached_token().await?;
+    pub async fn get_token(&self, client: &Client) -> Result<String, Error> {
+        let token = self.cached_token(client).await?;
         Ok(token.value.clone())
     }
 
@@ -144,7 +143,7 @@ impl Internal {
     }
 
     /// Refresh the token (if needed or forced).
-    pub async fn refresh(&self, force: bool) -> Result<(), Error> {
+    pub async fn refresh(&self, client: &Client, force: bool) -> Result<(), Error> {
         // This is executed every request at least once, so it's important to start with a read
         // lock. We expect to hit this branch most of the time.
         if !force && token_alive(&self.cached_token.read().await) {
@@ -158,8 +157,7 @@ impl Internal {
             return Ok(());
         }
 
-        let resp = self
-            .client
+        let resp = client
             .post(&self.token_endpoint)
             .json(&self.body)
             .send()
@@ -169,12 +167,13 @@ impl Internal {
     }
 
     /// Create an authenticated request.
-    pub async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
-        let token = self.get_token().await?;
-        Ok(self
-            .client
-            .request(method, url)
-            .header("x-auth-token", token))
+    pub async fn request(
+        &self,
+        client: &Client,
+        request: RequestBuilder,
+    ) -> Result<RequestBuilder, Error> {
+        let token = self.get_token(client).await?;
+        Ok(request.header("x-auth-token", token))
     }
 
     #[cfg(test)]
@@ -186,7 +185,6 @@ impl Internal {
 impl Clone for Internal {
     fn clone(&self) -> Internal {
         Internal {
-            client: self.client.clone(),
             auth_url: self.auth_url.clone(),
             body: self.body.clone(),
             token_endpoint: self.token_endpoint.clone(),

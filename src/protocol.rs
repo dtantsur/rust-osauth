@@ -22,11 +22,12 @@ use log::{debug, error, trace, warn};
 use reqwest::{Method, Url};
 use serde::Deserialize;
 
+use super::client::AuthenticatedClient;
 use super::common::Version;
 use super::request;
 use super::services::ServiceType;
 use super::url;
-use super::{ApiVersion, AuthType, Error, ErrorKind};
+use super::{ApiVersion, Error, ErrorKind};
 
 /// A result of a version discovery endpoint.
 #[derive(Clone, Debug, Deserialize)]
@@ -152,10 +153,10 @@ impl TryFrom<Version> for ServiceInfo {
 async fn fetch_root(
     catalog_type: &'static str,
     endpoint: Url,
-    auth: &dyn AuthType,
+    client: &AuthenticatedClient,
 ) -> Result<Root, Error> {
     debug!("Fetching {} service info from {}", catalog_type, endpoint);
-    request::fetch_json(auth.request(Method::GET, endpoint).await?).await
+    request::fetch_json(client.request(Method::GET, endpoint).await?).await
 }
 
 impl ServiceInfo {
@@ -215,7 +216,7 @@ impl ServiceInfo {
     pub async fn fetch<Srv: ServiceType>(
         service: Srv,
         endpoint: Url,
-        auth: &dyn AuthType,
+        client: &AuthenticatedClient,
     ) -> Result<ServiceInfo, Error> {
         let fallback = ServiceInfo {
             root_url: endpoint.clone(),
@@ -238,7 +239,7 @@ impl ServiceInfo {
         let secure = endpoint.scheme() == "https";
         let catalog_type = service.catalog_type();
 
-        let root = match fetch_root(catalog_type, endpoint.clone(), auth).await {
+        let root = match fetch_root(catalog_type, endpoint.clone(), client).await {
             Ok(root) => root,
             Err(e) if e.kind() == ErrorKind::ResourceNotFound => {
                 if url::is_root(&endpoint) {
@@ -250,7 +251,7 @@ impl ServiceInfo {
                     return Err(err);
                 } else {
                     debug!("Got HTTP 404 from {}, trying parent endpoint", endpoint);
-                    fetch_root(catalog_type, url::pop(endpoint), auth).await?
+                    fetch_root(catalog_type, url::pop(endpoint), client).await?
                 }
             }
             Err(e) => return Err(e),

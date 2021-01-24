@@ -17,6 +17,8 @@
 use std::env;
 use std::str::FromStr;
 
+use reqwest::Client;
+
 use crate::common::IdOrName;
 use crate::identity::{Password, Scope, Token};
 use crate::loading;
@@ -44,7 +46,7 @@ impl Environment for RealEnvironment {
 }
 
 #[inline]
-fn create_session<T, E>(auth: T, env: E) -> Result<Session, Error>
+fn create_session<T, E>(client: Client, auth: T, env: E) -> Result<Session, Error>
 where
     T: AuthType + 'static,
     E: Environment,
@@ -59,7 +61,7 @@ where
         filters.region = Some(region);
     }
 
-    Ok(Session::new(auth).with_endpoint_filters(filters))
+    Ok(Session::new_with_client(client, auth).with_endpoint_filters(filters))
 }
 
 #[inline]
@@ -80,16 +82,16 @@ fn _from_env<E: Environment>(env: E) -> Result<Session, Error> {
 
     if auth_type == "none" {
         let endpoint = env.get("OS_ENDPOINT")?;
-        let id = NoAuth::new_with_client(&endpoint, client)?;
-        return Ok(Session::new(id));
+        let id = NoAuth::new(&endpoint)?;
+        return Ok(Session::new_with_client(client, id));
     }
 
     if auth_type == "http_basic" {
         let endpoint = env.get("OS_ENDPOINT")?;
         let user_name = env.get("OS_USERNAME")?;
         let password = env.get("OS_PASSWORD")?;
-        let id = BasicAuth::new_with_client(&endpoint, client, user_name, password)?;
-        return Ok(Session::new(id));
+        let id = BasicAuth::new(&endpoint, user_name, password)?;
+        return Ok(Session::new_with_client(client, id));
     }
 
     let auth_url = env.get("OS_AUTH_URL")?;
@@ -116,14 +118,13 @@ fn _from_env<E: Environment>(env: E) -> Result<Session, Error> {
             let user_domain = env
                 .get("OS_USER_DOMAIN_NAME")
                 .unwrap_or_else(|_| String::from("Default"));
-            let id =
-                Password::new_with_client(&auth_url, client, user_name, password, user_domain)?;
-            create_session(id.with_scope(scope), env)
+            let id = Password::new(&auth_url, user_name, password, user_domain)?;
+            create_session(client, id.with_scope(scope), env)
         }
         "v3token" => {
             let token = env.get("OS_TOKEN")?;
-            let id = Token::new_with_client(&auth_url, client, token)?;
-            create_session(id.with_scope(scope), env)
+            let id = Token::new(&auth_url, token)?;
+            create_session(client, id.with_scope(scope), env)
         }
         _ => Err(Error::new(
             ErrorKind::InvalidInput,

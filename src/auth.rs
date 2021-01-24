@@ -17,7 +17,7 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, Method, RequestBuilder, Url};
+use reqwest::{Client, IntoUrl, RequestBuilder, Url};
 
 use super::{EndpointFilters, Error, ErrorKind};
 
@@ -31,18 +31,23 @@ use super::{EndpointFilters, Error, ErrorKind};
 /// An authentication type should cache the token as long as it's valid.
 #[async_trait]
 pub trait AuthType: Debug + Sync + Send {
-    /// Get a URL for the requested service.
+    /// Authenticate a request.
+    async fn authenticate(
+        &self,
+        client: &Client,
+        request: RequestBuilder,
+    ) -> Result<RequestBuilder, Error>;
+
+    /// Get a URL for the requested service using the provided client (if needed).
     async fn get_endpoint(
         &self,
+        client: &Client,
         service_type: String,
         filters: EndpointFilters,
     ) -> Result<Url, Error>;
 
-    /// Create an authenticated request.
-    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error>;
-
     /// Refresh the authentication (renew the token, etc).
-    async fn refresh(&self) -> Result<(), Error>;
+    async fn refresh(&self, client: &Client) -> Result<(), Error>;
 }
 
 /// Authentication type that provides no authentication.
@@ -55,7 +60,6 @@ pub trait AuthType: Debug + Sync + Send {
 /// ```
 #[derive(Clone, Debug)]
 pub struct NoAuth {
-    client: Client,
     endpoint: Option<Url>,
 }
 
@@ -69,17 +73,7 @@ impl NoAuth {
     where
         U: IntoUrl,
     {
-        Self::new_with_client(endpoint, Client::new())
-    }
-
-    /// Create a new fake authentication method using a fixed endpoint and an HTTP client.
-    #[inline]
-    pub fn new_with_client<U>(endpoint: U, client: Client) -> Result<NoAuth, Error>
-    where
-        U: IntoUrl,
-    {
         Ok(NoAuth {
-            client,
             endpoint: Some(endpoint.into_url()?),
         })
     }
@@ -88,24 +82,26 @@ impl NoAuth {
     ///
     /// All calls to `get_endpoint` will fail. This option is only useful with endpoint overrides.
     #[inline]
-    pub fn new_without_endpoint(client: Client) -> NoAuth {
-        NoAuth {
-            client,
-            endpoint: None,
-        }
+    pub fn new_without_endpoint() -> NoAuth {
+        NoAuth { endpoint: None }
     }
 }
 
 #[async_trait]
 impl AuthType for NoAuth {
-    /// Create a request.
-    async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
-        Ok(self.client.request(method, url))
+    /// Authenticate a request.
+    async fn authenticate(
+        &self,
+        _client: &Client,
+        request: RequestBuilder,
+    ) -> Result<RequestBuilder, Error> {
+        Ok(request)
     }
 
     /// Get a predefined endpoint for all service types
     async fn get_endpoint(
         &self,
+        _client: &Client,
         service_type: String,
         _filters: EndpointFilters,
     ) -> Result<Url, Error> {
@@ -121,13 +117,15 @@ impl AuthType for NoAuth {
     }
 
     /// This call does nothing for `NoAuth`.
-    async fn refresh(&self) -> Result<(), Error> {
+    async fn refresh(&self, _client: &Client) -> Result<(), Error> {
         Ok(())
     }
 }
 
 #[cfg(test)]
 pub mod test {
+    use reqwest::Client;
+
     use super::{AuthType, NoAuth};
 
     #[test]
@@ -149,7 +147,7 @@ pub mod test {
     async fn test_noauth_get_endpoint() {
         let a = NoAuth::new("http://127.0.0.1:8080/v1").unwrap();
         let e = a
-            .get_endpoint(String::from("foobar"), Default::default())
+            .get_endpoint(&Client::new(), String::from("foobar"), Default::default())
             .await
             .unwrap();
         assert_eq!(e.scheme(), "http");
