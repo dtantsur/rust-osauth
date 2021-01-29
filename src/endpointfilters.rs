@@ -15,9 +15,7 @@
 //! Endpoint filters for looking up endpoints.
 
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
-use std::ops::Deref;
 use std::str::FromStr;
 
 use super::{Error, ErrorKind};
@@ -35,10 +33,10 @@ pub enum InterfaceType {
 }
 
 /// A list of acceptable interface types.
-#[derive(Clone, Copy, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ValidInterfaces {
-    items: [InterfaceType; 3],
-    len: u8,
+    // Uses the 1st 6 bits here in groups of 3.
+    bits: u8,
 }
 
 /// Endpoint filters for looking up endpoints.
@@ -80,36 +78,83 @@ where
     }
 }
 
-impl fmt::Debug for ValidInterfaces {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ValidInterfaces ")?;
-        f.debug_list()
-            .entries(&self.items[..self.len as usize])
-            .finish()
+impl InterfaceType {
+    #[inline]
+    fn value(&self) -> u8 {
+        match self {
+            InterfaceType::Public => 0b01,
+            InterfaceType::Internal => 0b10,
+            InterfaceType::Admin => 0b11,
+        }
+    }
+
+    #[inline]
+    fn from_value(value: u8) -> InterfaceType {
+        match value {
+            0b01 => InterfaceType::Public,
+            0b10 => InterfaceType::Internal,
+            0b11 => InterfaceType::Admin,
+            _ => unreachable!(),
+        }
     }
 }
 
-impl AsRef<[InterfaceType]> for ValidInterfaces {
-    fn as_ref(&self) -> &[InterfaceType] {
-        self
+impl fmt::Debug for ValidInterfaces {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ValidInterfaces ")?;
+        let mut lst = f.debug_list();
+        for item in self {
+            let _ = lst.entry(&item);
+        }
+        lst.finish()
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct InterfaceIterator {
+    current: u8,
+}
+
+impl Iterator for InterfaceIterator {
+    type Item = InterfaceType;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current > 0 {
+            let result = InterfaceType::from_value(self.current & 0b11);
+            self.current = self.current >> 2;
+            Some(result)
+        } else {
+            None
+        }
+    }
+}
+
+impl IntoIterator for ValidInterfaces {
+    type Item = InterfaceType;
+    type IntoIter = InterfaceIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        InterfaceIterator {
+            current: self.bits,
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a ValidInterfaces {
+    type Item = InterfaceType;
+    type IntoIter = InterfaceIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        InterfaceIterator {
+            current: self.bits,
+        }
     }
 }
 
 impl Default for ValidInterfaces {
     /// Defaults to "public".
     fn default() -> ValidInterfaces {
-        ValidInterfaces {
-            items: [InterfaceType::Public; 3],
-            len: 1,
-        }
-    }
-}
-
-impl Deref for ValidInterfaces {
-    type Target = [InterfaceType];
-
-    fn deref(&self) -> &Self::Target {
-        &self.items[..self.len as usize]
+        ValidInterfaces::one(InterfaceType::default())
     }
 }
 
@@ -133,6 +178,36 @@ impl From<&[InterfaceType]> for ValidInterfaces {
             let _ = result.push(*item);
         }
         result
+    }
+}
+
+impl From<&[InterfaceType; 1]> for ValidInterfaces {
+    fn from(value: &[InterfaceType; 1]) -> ValidInterfaces {
+        ValidInterfaces::from(&value[..])
+    }
+}
+
+impl From<&[InterfaceType; 2]> for ValidInterfaces {
+    fn from(value: &[InterfaceType; 2]) -> ValidInterfaces {
+        ValidInterfaces::from(&value[..])
+    }
+}
+
+impl From<&[InterfaceType; 3]> for ValidInterfaces {
+    fn from(value: &[InterfaceType; 3]) -> ValidInterfaces {
+        ValidInterfaces::from(&value[..])
+    }
+}
+
+impl PartialEq<[InterfaceType]> for ValidInterfaces {
+    fn eq(&self, other: &[InterfaceType]) -> bool {
+        *self == ValidInterfaces::from(other)
+    }
+}
+
+impl PartialEq<[InterfaceType; 2]> for ValidInterfaces {
+    fn eq(&self, other: &[InterfaceType; 2]) -> bool {
+        *self == ValidInterfaces::from(other)
     }
 }
 
@@ -162,35 +237,28 @@ impl<'s> FromIterator<&'s InterfaceType> for ValidInterfaces {
     }
 }
 
-impl PartialEq for ValidInterfaces {
-    fn eq(&self, other: &ValidInterfaces) -> bool {
-        self.len == other.len && self.items[..self.len as usize] == other.items[..self.len as usize]
-    }
-}
-
-impl Hash for ValidInterfaces {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.len.hash(state);
-        self.items[..self.len as usize].hash(state);
-    }
-}
-
 impl ValidInterfaces {
     /// Append all items from another collection.
     ///
     /// Any duplicates are ignored.
     #[inline]
-    pub fn append(&mut self, other: &ValidInterfaces) {
-        self.items = other.items;
-        self.len = other.len;
+    pub fn append<T: IntoIterator<Item = InterfaceType>>(&mut self, other: T) {
+        for item in other {
+            let _ = self.push(item);
+        }
+    }
+
+    /// Check if the interface is in the list.
+    #[inline]
+    pub fn contains(&self, item: InterfaceType) -> bool {
+        self.into_iter().any(|x| x == item)
     }
 
     /// One valid interface.
     #[inline]
     pub fn one(item: InterfaceType) -> ValidInterfaces {
         ValidInterfaces {
-            items: [item; 3],
-            len: 1,
+            bits: item.value(),
         }
     }
 
@@ -200,9 +268,8 @@ impl ValidInterfaces {
     #[inline]
     pub fn push(&mut self, item: InterfaceType) -> bool {
         // NOTE(dtantsur): there are exactly 3 possible interface types, so overflow is impossible.
-        if !self.contains(&item) {
-            self.items[self.len as usize] = item;
-            self.len += 1;
+        if !self.contains(item) {
+            self.bits = (self.bits << 2) | item.value();
             true
         } else {
             false
@@ -212,14 +279,13 @@ impl ValidInterfaces {
     #[inline]
     fn empty() -> ValidInterfaces {
         ValidInterfaces {
-            items: [InterfaceType::Public; 3],
-            len: 0,
+            bits: 0,
         }
     }
 
     #[inline]
     pub(crate) fn find(&self, interface: &str) -> Option<usize> {
-        self.iter().position(|x| x == &interface)
+        self.into_iter().position(|x| x == &interface)
     }
 
     /// Whether the interfaces match the provided endpoint.
@@ -339,8 +405,8 @@ pub mod test {
         let default = ValidInterfaces::default();
         assert_eq!(default.len(), 1);
         assert_eq!(*default, [Public]);
-        assert!(default.contains(&Public));
-        assert!(!default.contains(&Internal));
+        assert!(default.contains(Public));
+        assert!(!default.contains(Internal));
         assert_eq!(
             "ValidInterfaces [Public]",
             format!("{:?}", default).as_str()
@@ -352,7 +418,7 @@ pub mod test {
         let default = ValidInterfaces::one(Internal);
         assert_eq!(default.len(), 1);
         assert_eq!(*default, [Internal]);
-        assert!(!default.contains(&Public));
+        assert!(!default.contains(Public));
         assert_eq!(
             "ValidInterfaces [Internal]",
             format!("{:?}", default).as_str()
@@ -368,7 +434,7 @@ pub mod test {
         assert!(!vi.push(Public));
         assert_eq!(vi.len(), 2);
         assert!(vi.push(Internal));
-        assert_eq!(*vi, [Public, Admin, Internal]);
+        assert_eq!(vi, &[Public, Admin, Internal]);
         assert_eq!(
             "ValidInterfaces [Public, Admin, Internal]",
             format!("{:?}", vi).as_str()
@@ -401,9 +467,9 @@ pub mod test {
     #[test]
     fn test_valid_interfaces_from() {
         let vi: ValidInterfaces = vec![Public, Internal].into();
-        assert_eq!(*vi, [Public, Internal]);
+        assert_eq!(vi, &[Public, Internal]);
 
         let vi: ValidInterfaces = vec![Public, Internal, Public, Public, Admin, Internal].into();
-        assert_eq!(*vi, [Public, Internal, Admin]);
+        assert_eq!(vi, &[Public, Internal, Admin]);
     }
 }
