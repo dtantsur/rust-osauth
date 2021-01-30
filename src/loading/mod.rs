@@ -58,8 +58,8 @@ fn get_client(cacert: Option<String>) -> Result<Client, Error> {
     Ok(builder.build().expect("Cannot initialize HTTP backend"))
 }
 
+mod cloud;
 mod config;
 mod env;
 
-pub use config::from_config;
-pub use env::from_env;
+pub use cloud::CloudConfig;

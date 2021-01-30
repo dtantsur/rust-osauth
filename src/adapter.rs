@@ -19,7 +19,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use super::client::RequestBuilder;
-use super::loading;
 use super::services::ServiceType;
 use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
@@ -51,7 +50,7 @@ impl<Srv> Adapter<Srv> {
     /// See [Session::from_config](struct.Session.html#method.from_config) for details.
     #[inline]
     pub fn from_config<S: AsRef<str>>(cloud_name: S, service: Srv) -> Result<Adapter<Srv>, Error> {
-        Ok(loading::from_config(cloud_name)?.into_adapter(service))
+        Ok(Session::from_config(cloud_name)?.into_adapter(service))
     }
 
     /// Create a new adapter with information from environment variables.
@@ -59,7 +58,7 @@ impl<Srv> Adapter<Srv> {
     /// See [Session::from_env](struct.Session.html#method.from_env) for details.
     #[inline]
     pub fn from_env(service: Srv) -> Result<Adapter<Srv>, Error> {
-        Ok(loading::from_env()?.into_adapter(service))
+        Ok(Session::from_env()?.into_adapter(service))
     }
 
     /// Create a new adapter from a `Session`.

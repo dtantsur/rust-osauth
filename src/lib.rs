@@ -132,4 +132,5 @@ pub use crate::auth::{AuthType, NoAuth};
 pub use crate::basic::BasicAuth;
 pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces};
 pub use crate::error::{Error, ErrorKind};
+pub use crate::loading::CloudConfig;
 pub use crate::session::Session;

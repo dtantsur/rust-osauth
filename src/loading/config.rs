@@ -19,51 +19,16 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use log::warn;
-use reqwest::{Client, Url};
 use serde::Deserialize;
 
-use crate::common::IdOrName;
-use crate::identity::{Password, Scope};
-use crate::loading;
+use crate::loading::cloud::CloudConfig;
 use crate::utils;
-use crate::{AuthType, BasicAuth, Error, ErrorKind, NoAuth, Session};
-
-#[derive(Debug, Deserialize)]
-struct Auth {
-    #[serde(default)]
-    auth_url: Option<String>,
-    #[serde(default)]
-    endpoint: Option<String>,
-    #[serde(default)]
-    password: Option<String>,
-    #[serde(default)]
-    project_name: Option<String>,
-    #[serde(default)]
-    project_domain_name: Option<String>,
-    #[serde(default)]
-    username: Option<String>,
-    #[serde(default)]
-    user_domain_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Cloud {
-    #[serde(default)]
-    auth: Option<Auth>,
-    #[serde(default)]
-    auth_type: Option<String>,
-    #[serde(default)]
-    cacert: Option<String>,
-    #[serde(default)]
-    region_name: Option<String>,
-    #[serde(flatten)]
-    options: HashMap<String, serde_yaml::Value>,
-}
+use crate::{Error, ErrorKind};
 
 #[derive(Debug, Deserialize)]
 struct Clouds {
     #[serde(flatten)]
-    clouds: HashMap<String, Cloud>,
+    clouds: HashMap<String, CloudConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -210,122 +175,12 @@ fn read_yaml(filename: &str, default_root_key: Option<&str>) -> Result<serde_yam
     }
 }
 
-fn add_endpoint_override(session: &mut Session, key: String, value: String) -> Result<(), Error> {
-    let service_type = key.trim_end_matches("_endpoint_override");
-    let url = Url::parse(&value)
-        .map_err(|e| Error::new(ErrorKind::InvalidConfig, format!("Invalid {}: {}", key, e)))?;
-    let _ = session
-        .endpoint_overrides_mut()
-        .insert(service_type.to_string(), url.clone());
-    // Handle types like baremetal-introspection
-    let with_dashes = service_type.replace("_", "-");
-    let _ = session.endpoint_overrides_mut().insert(with_dashes, url);
-    Ok(())
-}
-
-fn create_session<T: AuthType + 'static>(
-    client: Client,
-    auth: T,
-    region_name: Option<String>,
-    options: HashMap<String, serde_yaml::Value>,
-) -> Result<Session, Error> {
-    let mut result = Session::new_with_client(client, auth);
-    for (key, value) in options {
-        // TODO(dtantsur): replace with strip_suffix when no longer support rustc < 1.45.0
-        if key.ends_with("_endpoint_override") {
-            if let serde_yaml::Value::String(value) = value {
-                add_endpoint_override(&mut result, key, value)?;
-            } else {
-                return Err(Error::new(
-                    ErrorKind::InvalidConfig,
-                    format!("{} must be a string, got {:?}", key, value),
-                ));
-            }
-        }
-    }
-    result.endpoint_filters_mut().region = region_name;
-
-    Ok(result)
-}
-
-fn password_auth_from_cloud(auth: Auth) -> Result<Password, Error> {
-    let user_domain = auth
-        .user_domain_name
-        .unwrap_or_else(|| String::from("Default"));
-    let project_domain = auth
-        .project_domain_name
-        .unwrap_or_else(|| String::from("Default"));
-    let auth_url = auth.auth_url.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            "Identity authentication requires an auth_url",
-        )
-    })?;
-    let username = auth.username.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            "Identity authentication requires a user name",
-        )
-    })?;
-    let password = auth.password.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            "Identity authentication requires a password",
-        )
-    })?;
-    let mut id = Password::new(&auth_url, username, password, user_domain)?;
-    if let Some(project_name) = auth.project_name {
-        let scope = Scope::Project {
-            project: IdOrName::Name(project_name),
-            domain: Some(IdOrName::Name(project_domain)),
-        };
-        id.set_scope(scope);
-    }
-
-    Ok(id)
-}
-
-fn basic_auth_from_cloud(auth: Auth) -> Result<BasicAuth, Error> {
-    let endpoint = auth.endpoint.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            "HTTP basic authentication requires an endpoint",
-        )
-    })?;
-    let username = auth.username.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            "HTTP basic authentication requires a user name",
-        )
-    })?;
-    let password = auth.password.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            "HTTP basic authentication requires a password",
-        )
-    })?;
-
-    BasicAuth::new(&endpoint, username, password)
-}
-
-fn none_auth_from_cloud(auth: Option<Auth>) -> Result<NoAuth, Error> {
-    Ok(if let Some(auth) = auth {
-        if let Some(endpoint) = auth.endpoint {
-            NoAuth::new(&endpoint)?
-        } else {
-            NoAuth::new_without_endpoint()
-        }
-    } else {
-        NoAuth::new_without_endpoint()
-    })
-}
-
 fn from_files(
     name: &str,
     mut clouds: serde_yaml::Mapping,
     clouds_public: serde_yaml::Mapping,
     secure: serde_yaml::Mapping,
-) -> Result<Session, Error> {
+) -> Result<CloudConfig, Error> {
     utils::merge_mappings(secure, &mut clouds, true);
 
     inject_profiles(&clouds_public, &mut clouds)?;
@@ -338,52 +193,15 @@ fn from_files(
             )
         })?;
 
-    let cloud =
-        clouds_root.clouds.clouds.remove(name).ok_or_else(|| {
-            Error::new(ErrorKind::InvalidConfig, format!("No such cloud: {}", name))
-        })?;
-    let auth_type = cloud.auth_type.unwrap_or_else(|| "password".to_string());
-
-    let client = loading::get_client(cloud.cacert)?;
-
-    if auth_type == "none" {
-        return create_session(
-            client,
-            none_auth_from_cloud(cloud.auth)?,
-            cloud.region_name,
-            cloud.options,
-        );
-    }
-
-    let auth = cloud.auth.ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidConfig,
-            format!("{} authentication requires 'auth' object", auth_type),
-        )
-    })?;
-
-    match auth_type.as_str() {
-        "password" => create_session(
-            client,
-            password_auth_from_cloud(auth)?,
-            cloud.region_name,
-            cloud.options,
-        ),
-        "http_basic" => create_session(
-            client,
-            basic_auth_from_cloud(auth)?,
-            cloud.region_name,
-            cloud.options,
-        ),
-        _ => Err(Error::new(
-            ErrorKind::InvalidConfig,
-            format!("Unsupported authentication type: {}", auth_type),
-        )),
-    }
+    clouds_root
+        .clouds
+        .clouds
+        .remove(name)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidConfig, format!("No such cloud: {}", name)))
 }
 
 /// Create a `Session` from a `clouds.yaml` configuration file.
-pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
+pub fn from_config(cloud_name: &str) -> Result<CloudConfig, Error> {
     let clouds = read_yaml("clouds.yaml", None)?;
     let clouds_public = read_yaml("clouds-public.yaml", Some("public-clouds"))?;
     let secure = read_yaml("secure.yaml", Some("clouds"))?;
@@ -424,7 +242,10 @@ pub mod test {
       password: password1"#,
         );
 
-        let _ = from_files("cloud_name", clouds, clouds_public, secure).unwrap();
+        let _ = from_files("cloud_name", clouds, clouds_public, secure)
+            .unwrap()
+            .create_session_config()
+            .unwrap();
     }
 
     #[test]
@@ -446,46 +267,8 @@ pub mod test {
             with_one_key("public-clouds"),
             with_one_key("clouds"),
         )
-        .unwrap();
-    }
-
-    #[test]
-    fn test_from_config_http_basic() {
-        let clouds = to_yaml(
-            r#"clouds:
-  cloud_name:
-    auth_type: http_basic
-    auth:
-      endpoint: http://url1
-      username: user1
-      password: password1"#,
-        );
-
-        let _ = from_files(
-            "cloud_name",
-            clouds,
-            with_one_key("public-clouds"),
-            with_one_key("clouds"),
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn test_from_config_none() {
-        let clouds = to_yaml(
-            r#"clouds:
-  cloud_name:
-    auth_type: none
-    auth:
-      endpoint: http://url1"#,
-        );
-
-        let _ = from_files(
-            "cloud_name",
-            clouds,
-            with_one_key("public-clouds"),
-            with_one_key("clouds"),
-        )
+        .unwrap()
+        .create_session_config()
         .unwrap();
     }
 
@@ -504,6 +287,8 @@ pub mod test {
             with_one_key("public-clouds"),
             with_one_key("clouds"),
         )
+        .unwrap()
+        .create_session_config()
         .unwrap();
     }
 
@@ -521,6 +306,8 @@ pub mod test {
             with_one_key("public-clouds"),
             with_one_key("clouds"),
         )
+        .unwrap()
+        .create_session_config()
         .unwrap();
     }
 
@@ -540,14 +327,16 @@ pub mod test {
             with_one_key("public-clouds"),
             with_one_key("clouds"),
         )
+        .unwrap()
+        .create_session_config()
         .unwrap();
         assert_eq!(
             "http://baremetal/v1",
-            sess.endpoint_overrides().get("baremetal").unwrap().as_str()
+            sess.endpoint_overrides.get("baremetal").unwrap().as_str()
         );
         assert_eq!(
             "http://introspection/",
-            sess.endpoint_overrides()
+            sess.endpoint_overrides
                 .get("baremetal-introspection")
                 .unwrap()
                 .as_str()
@@ -592,35 +381,9 @@ hK9jLBzNvo8qzKqaGfnGieuLeXCqFDA=
             with_one_key("public-clouds"),
             with_one_key("clouds"),
         )
+        .unwrap()
+        .create_session_config()
         .unwrap();
-    }
-
-    #[test]
-    fn test_from_config_cacert_not_found() {
-        let clouds = to_yaml(
-            r#"clouds:
-  cloud_name:
-    auth_type: http_basic
-    auth:
-      endpoint: http://url1
-      username: user1
-      password: password1
-    cacert: /I/do/not/exist"#,
-        );
-
-        let e = from_files(
-            "cloud_name",
-            clouds,
-            with_one_key("public-clouds"),
-            with_one_key("clouds"),
-        )
-        .err()
-        .unwrap();
-        if cfg!(any(feature = "native-tls", feature = "rustls")) {
-            assert!(e.to_string().contains("Cannot open cacert file"));
-        } else {
-            assert!(e.to_string().contains("TLS support is disabled"));
-        }
     }
 
     #[test]

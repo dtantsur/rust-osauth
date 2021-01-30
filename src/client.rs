@@ -59,10 +59,12 @@ pub struct AuthenticatedClient {
 impl AuthenticatedClient {
     /// Create a new authenticated client.
     pub fn new<Auth: AuthType + 'static>(client: Client, auth_type: Auth) -> AuthenticatedClient {
-        AuthenticatedClient {
-            client,
-            auth: Arc::new(auth_type),
-        }
+        AuthenticatedClient::new_internal(client, Arc::new(auth_type))
+    }
+
+    #[inline]
+    pub(crate) fn new_internal(client: Client, auth: Arc<dyn AuthType>) -> AuthenticatedClient {
+        AuthenticatedClient { client, auth }
     }
 
     /// Get a reference to the authentication type in use.

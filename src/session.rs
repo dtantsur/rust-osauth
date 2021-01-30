@@ -25,7 +25,7 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 
 use super::client::{AuthenticatedClient, RequestBuilder};
-use super::loading;
+use super::loading::CloudConfig;
 use super::protocol::ServiceInfo;
 use super::services::ServiceType;
 use super::url;
@@ -58,16 +58,21 @@ impl Session {
         Session::new_with_client(Client::new(), auth_type)
     }
 
-    /// Create a new session with a given authentication plugin and an HTTP client.
-    ///
-    /// The resulting session will use the default endpoint interface (usually, public).
-    pub fn new_with_client<Auth: AuthType + 'static>(client: Client, auth_type: Auth) -> Session {
+    /// Create a new session with a given authenticated client.
+    pub fn new_with_authenticated_client(client: AuthenticatedClient) -> Session {
         Session {
-            client: AuthenticatedClient::new(client, auth_type),
+            client,
             cached_info: Arc::new(RwLock::new(HashMap::new())),
             endpoint_filters: EndpointFilters::default(),
             endpoint_overrides: HashMap::new(),
         }
+    }
+
+    /// Create a new session with a given authentication plugin and an HTTP client.
+    ///
+    /// The resulting session will use the default endpoint interface (usually, public).
+    pub fn new_with_client<Auth: AuthType + 'static>(client: Client, auth_type: Auth) -> Session {
+        Session::new_with_authenticated_client(AuthenticatedClient::new(client, auth_type))
     }
 
     /// Create a `Session` from a `clouds.yaml` configuration file.
@@ -93,7 +98,7 @@ impl Session {
     /// 4. Identity v2.
     #[inline]
     pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
-        loading::from_config(cloud_name)
+        CloudConfig::from_config(cloud_name)?.create_session()
     }
 
     /// Create a `Session` from environment variables.
@@ -112,7 +117,7 @@ impl Session {
     /// * `OS_REGION_NAME` and `OS_INTERFACE`.
     #[inline]
     pub fn from_env() -> Result<Session, Error> {
-        loading::from_env()
+        CloudConfig::from_env()?.create_session()
     }
 
     /// Create an adapter for the specific service type.
