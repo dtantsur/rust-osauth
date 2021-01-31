@@ -40,23 +40,27 @@ use crate::{AuthType, EndpointFilters, Error};
 /// with [with_project_scope](#method.with_project_scope):
 ///
 /// ```rust,no_run
+/// # async fn example() -> Result<(), osauth::Error> {
 /// use osauth::common::IdOrName;
 /// let auth = osauth::identity::Password::new(
 ///     "https://cloud.local/identity",
 ///     "admin",
 ///     "pa$$w0rd",
 ///     "Default"
-/// )
-/// .expect("Invalid auth_url")
+/// )?
 /// .with_project_scope(IdOrName::from_name("project1"), IdOrName::from_id("default"));
 ///
-/// let session = osauth::Session::new(auth);
+/// let session = osauth::Session::new(auth).await?;
+/// # Ok(()) }
+/// # #[tokio::main]
+/// # async fn main() { example().await.unwrap(); }
 /// ```
 ///
 /// By default, the `public` endpoint interface is used. If you would prefer to default to another
 /// one, you can set it on the `Session`. Region can also be set there:
 ///
 /// ```rust,no_run
+/// # async fn example() -> Result<(), osauth::Error> {
 /// use osauth::common::IdOrName;
 ///
 /// let scope = osauth::identity::Scope::Project {
@@ -68,13 +72,16 @@ use crate::{AuthType, EndpointFilters, Error};
 ///     "admin",
 ///     "pa$$w0rd",
 ///     "Default"
-/// )
-/// .expect("Invalid auth_url")
+/// )?
 /// .with_scope(scope);
 ///
 /// let session = osauth::Session::new(auth)
+///     .await?
 ///     .with_endpoint_interface(osauth::InterfaceType::Internal)
 ///     .with_region("US-East");
+/// # Ok(()) }
+/// # #[tokio::main]
+/// # async fn main() { example().await.unwrap(); }
 /// ```
 ///
 /// The authentication token is cached while it's still valid or until

@@ -273,8 +273,9 @@ impl CloudConfig {
     }
 
     /// Create a session from this configuration.
-    pub fn create_session(self) -> Result<Session, Error> {
-        let config = self.create_session_config()?;
+    pub async fn create_session(self) -> Result<Session, Error> {
+        let mut config = self.create_session_config()?;
+        config.client.refresh().await?;
         let mut result = Session::new_with_authenticated_client(config.client)
             .with_endpoint_overrides(config.endpoint_overrides);
         result.endpoint_filters_mut().region = config.region_name;
@@ -297,14 +298,6 @@ impl CloudConfig {
             }
         }
         Ok(())
-    }
-}
-
-impl TryFrom<CloudConfig> for Session {
-    type Error = Error;
-
-    fn try_from(value: CloudConfig) -> Result<Session, Error> {
-        value.create_session()
     }
 }
 

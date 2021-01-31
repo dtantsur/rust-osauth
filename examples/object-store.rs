@@ -18,6 +18,7 @@ static DATA: u8 = 42;
 async fn main() {
     env_logger::init();
     let adapter = osauth::Adapter::from_env(osauth::services::OBJECT_STORAGE)
+        .await
         .expect("Failed to create an identity provider from the environment");
 
     adapter

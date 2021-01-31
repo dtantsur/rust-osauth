@@ -16,6 +16,7 @@
 async fn main() {
     env_logger::init();
     let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+        .await
         .expect("Failed to create an identity provider from the environment");
 
     let maybe_version = adapter

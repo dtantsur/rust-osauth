@@ -41,9 +41,14 @@ use super::{AuthType, EndpointFilters, Error};
 /// An example:
 ///
 /// ```rust,no_run
-/// let session = osauth::Session::from_env()
-///     .expect("Failed to create an identity provider from the environment");
-/// let future = session.get(osauth::services::OBJECT_STORAGE, osauth::client::NO_PATH, None);
+/// # async fn example() -> Result<(), osauth::Error> {
+/// let session = osauth::Session::from_env().await?;
+/// let future = session
+///     .get(osauth::services::OBJECT_STORAGE, osauth::client::NO_PATH, None)
+///     .await?;
+/// # Ok(()) }
+/// # #[tokio::main]
+/// # async fn main() { example().await.unwrap(); }
 /// ```
 pub const NO_PATH: Option<&'static str> = None;
 
@@ -58,8 +63,15 @@ pub struct AuthenticatedClient {
 
 impl AuthenticatedClient {
     /// Create a new authenticated client.
-    pub fn new<Auth: AuthType + 'static>(client: Client, auth_type: Auth) -> AuthenticatedClient {
-        AuthenticatedClient::new_internal(client, Arc::new(auth_type))
+    pub async fn new<Auth: AuthType + 'static>(
+        client: Client,
+        auth_type: Auth,
+    ) -> Result<AuthenticatedClient, Error> {
+        auth_type.refresh(&client).await?;
+        Ok(AuthenticatedClient::new_internal(
+            client,
+            Arc::new(auth_type),
+        ))
     }
 
     #[inline]
@@ -290,8 +302,7 @@ impl RequestBuilder {
     ///     }
     /// }
     ///
-    /// let session = osauth::Session::from_env()
-    ///     .expect("Failed to create an identity provider from the environment");
+    /// let session = osauth::Session::from_env().await?;
     ///
     /// let servers = session
     ///     .get(

@@ -29,6 +29,7 @@ pub struct ServersRoot {
 async fn main() {
     env_logger::init();
     let session = osauth::Session::from_env()
+        .await
         .expect("Failed to create an identity provider from the environment");
 
     let servers: ServersRoot = session

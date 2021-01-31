@@ -54,8 +54,8 @@ impl Session {
     /// Create a new session with a given authentication plugin.
     ///
     /// The resulting session will use the default endpoint interface (usually, public).
-    pub fn new<Auth: AuthType + 'static>(auth_type: Auth) -> Session {
-        Session::new_with_client(Client::new(), auth_type)
+    pub async fn new<Auth: AuthType + 'static>(auth_type: Auth) -> Result<Session, Error> {
+        Session::new_with_client(Client::new(), auth_type).await
     }
 
     /// Create a new session with a given authenticated client.
@@ -71,8 +71,13 @@ impl Session {
     /// Create a new session with a given authentication plugin and an HTTP client.
     ///
     /// The resulting session will use the default endpoint interface (usually, public).
-    pub fn new_with_client<Auth: AuthType + 'static>(client: Client, auth_type: Auth) -> Session {
-        Session::new_with_authenticated_client(AuthenticatedClient::new(client, auth_type))
+    pub async fn new_with_client<Auth: AuthType + 'static>(
+        client: Client,
+        auth_type: Auth,
+    ) -> Result<Session, Error> {
+        Ok(Session::new_with_authenticated_client(
+            AuthenticatedClient::new(client, auth_type).await?,
+        ))
     }
 
     /// Create a `Session` from a `clouds.yaml` configuration file.
@@ -97,8 +102,8 @@ impl Session {
     /// 3. Other authentication methods.
     /// 4. Identity v2.
     #[inline]
-    pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
-        CloudConfig::from_config(cloud_name)?.create_session()
+    pub async fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<Session, Error> {
+        CloudConfig::from_config(cloud_name)?.create_session().await
     }
 
     /// Create a `Session` from environment variables.
@@ -116,8 +121,8 @@ impl Session {
     /// * `OS_TOKEN` (for `v3token`).
     /// * `OS_REGION_NAME` and `OS_INTERFACE`.
     #[inline]
-    pub fn from_env() -> Result<Session, Error> {
-        CloudConfig::from_env()?.create_session()
+    pub async fn from_env() -> Result<Session, Error> {
+        CloudConfig::from_env()?.create_session().await
     }
 
     /// Create an adapter for the specific service type.
@@ -129,9 +134,12 @@ impl Session {
     /// bit more efficient.
     ///
     /// ```rust,no_run
-    /// let session = osauth::Session::from_env()
-    ///     .expect("Failed to create an identity provider from the environment");
+    /// # async fn example() -> Result<(), osauth::Error> {
+    /// let session = osauth::Session::from_env().await?;
     /// let adapter = session.adapter(osauth::services::COMPUTE);
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
     /// ```
     #[inline]
     pub fn adapter<Srv>(&self, service: Srv) -> Adapter<Srv> {
@@ -147,9 +155,13 @@ impl Session {
     /// involve cloning internal structures.
     ///
     /// ```rust,no_run
-    /// let session = osauth::Session::from_env()
-    ///     .expect("Failed to create an identity provider from the environment");
-    /// let adapter = session.into_adapter(osauth::services::COMPUTE);
+    /// # async fn example() -> Result<(), osauth::Error> {
+    /// let adapter = osauth::Session::from_env()
+    ///     .await?
+    ///     .into_adapter(osauth::services::COMPUTE);
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
     /// ```
     #[inline]
     pub fn into_adapter<Srv>(self, service: Srv) -> Adapter<Srv> {
@@ -305,6 +317,7 @@ impl Session {
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let session = osauth::Session::from_env()
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let maybe_versions = session
     ///     .get_api_versions(osauth::services::COMPUTE)
@@ -367,6 +380,7 @@ impl Session {
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let session = osauth::Session::from_env()
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let maybe_version = session
@@ -438,6 +452,7 @@ impl Session {
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let session = osauth::Session::from_env()
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let response = session
     ///     .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"], None)
@@ -511,6 +526,7 @@ impl Session {
     /// }
     ///
     /// let session = osauth::Session::from_env()
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// let servers: ServersRoot = session
@@ -735,19 +751,19 @@ pub(crate) mod test {
 
     pub const URL_WITH_SUFFIX: &str = "http://127.0.0.1:5000/v2/servers";
 
-    pub fn new_simple_session(url: &str) -> Session {
+    pub async fn new_simple_session(url: &str) -> Session {
         let service_info = ServiceInfo {
             root_url: Url::parse(url).unwrap(),
             major_version: None,
             minimum_version: None,
             current_version: None,
         };
-        new_session(url, service_info)
+        new_session(url, service_info).await
     }
 
-    pub fn new_session(url: &str, service_info: ServiceInfo) -> Session {
+    pub async fn new_session(url: &str, service_info: ServiceInfo) -> Session {
         let auth = NoAuth::new(url).unwrap();
-        let mut session = Session::new(auth);
+        let mut session = Session::new(auth).await.unwrap();
         session.cache_fake_service("fake", service_info);
         session
     }
@@ -756,21 +772,21 @@ pub(crate) mod test {
 
     #[tokio::test]
     async fn test_get_endpoint() {
-        let s = new_simple_session(URL);
+        let s = new_simple_session(URL).await;
         let ep = s.get_endpoint(FAKE, &[""]).await.unwrap();
         assert_eq!(&ep.to_string(), URL);
     }
 
     #[tokio::test]
     async fn test_get_endpoint_slice() {
-        let s = new_simple_session(URL);
+        let s = new_simple_session(URL).await;
         let ep = s.get_endpoint(FAKE, &["v2", "servers"]).await.unwrap();
         assert_eq!(&ep.to_string(), URL_WITH_SUFFIX);
     }
 
     #[tokio::test]
     async fn test_get_endpoint_vec() {
-        let s = new_simple_session(URL);
+        let s = new_simple_session(URL).await;
         let ep = s
             .get_endpoint(FAKE, vec!["v2".to_string(), "servers".to_string()])
             .await
@@ -780,7 +796,7 @@ pub(crate) mod test {
 
     #[tokio::test]
     async fn test_get_major_version_absent() {
-        let s = new_simple_session(URL);
+        let s = new_simple_session(URL).await;
         let res = s.get_major_version(FAKE).await.unwrap();
         assert!(res.is_none());
     }
@@ -795,7 +811,7 @@ pub(crate) mod test {
             minimum_version: None,
             current_version: None,
         };
-        let s = new_session(URL, service_info);
+        let s = new_session(URL, service_info).await;
         let res = s.get_major_version(FAKE).await.unwrap();
         assert_eq!(res, Some(MAJOR_VERSION));
     }
@@ -815,7 +831,7 @@ pub(crate) mod test {
     #[tokio::test]
     async fn test_pick_api_version_empty() {
         let service_info = fake_service_info();
-        let s = new_session(URL, service_info);
+        let s = new_session(URL, service_info).await;
         let res = s.pick_api_version(FAKE, None).await.unwrap();
         assert!(res.is_none());
     }
@@ -823,7 +839,7 @@ pub(crate) mod test {
     #[tokio::test]
     async fn test_pick_api_version_empty_vec() {
         let service_info = fake_service_info();
-        let s = new_session(URL, service_info);
+        let s = new_session(URL, service_info).await;
         let res = s.pick_api_version(FAKE, Vec::new()).await.unwrap();
         assert!(res.is_none());
     }
@@ -831,7 +847,7 @@ pub(crate) mod test {
     #[tokio::test]
     async fn test_pick_api_version() {
         let service_info = fake_service_info();
-        let s = new_session(URL, service_info);
+        let s = new_session(URL, service_info).await;
         let choice = vec![
             ApiVersion(2, 0),
             ApiVersion(2, 2),
@@ -845,7 +861,7 @@ pub(crate) mod test {
     #[tokio::test]
     async fn test_pick_api_version_option() {
         let service_info = fake_service_info();
-        let s = new_session(URL, service_info);
+        let s = new_session(URL, service_info).await;
         let res = s
             .pick_api_version(FAKE, Some(ApiVersion(2, 4)))
             .await
@@ -856,7 +872,7 @@ pub(crate) mod test {
     #[tokio::test]
     async fn test_pick_api_version_impossible() {
         let service_info = fake_service_info();
-        let s = new_session(URL, service_info);
+        let s = new_session(URL, service_info).await;
         let choice = vec![ApiVersion(2, 0), ApiVersion(2, 99)];
         let res = s.pick_api_version(FAKE, choice).await.unwrap();
         assert!(res.is_none());

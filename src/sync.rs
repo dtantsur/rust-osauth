@@ -17,6 +17,7 @@
 //! This module is only available when the `sync` feature is enabled.
 
 use std::cell::RefCell;
+use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::result;
@@ -25,7 +26,6 @@ use std::task::{Context, Poll};
 use bytes::Bytes;
 use futures::executor::{self, BlockingStream};
 use futures::stream::Stream;
-use futures::Future;
 use pin_project::pin_project;
 use reqwest::{Body, Response};
 use reqwest::{Method, Url};
@@ -102,12 +102,37 @@ impl SyncSession {
         }
     }
 
+    fn from_future(future: impl Future<Output = Result<Session>>) -> Result<SyncSession> {
+        let runtime = runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Could not create a runtime");
+        let inner = runtime.block_on(future)?;
+        Ok(SyncSession {
+            inner,
+            runtime: RefCell::new(runtime),
+        })
+    }
+
+    #[cfg(test)]
+    fn from_success_future(future: impl Future<Output = Session>) -> SyncSession {
+        let runtime = runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Could not create a runtime");
+        let inner = runtime.block_on(future);
+        SyncSession {
+            inner,
+            runtime: RefCell::new(runtime),
+        }
+    }
+
     /// Create a `SyncSession` from a `clouds.yaml` configuration file.
     ///
     /// See [Session::from_config](../struct.Session.html#method.from_config) for details.
     #[inline]
     pub fn from_config<S: AsRef<str>>(cloud_name: S) -> Result<SyncSession> {
-        Ok(Self::new(Session::from_config(cloud_name)?))
+        Self::from_future(Session::from_config(cloud_name))
     }
 
     /// Create a `SyncSession` from environment variables.
@@ -115,7 +140,7 @@ impl SyncSession {
     /// See [Session::from_env](../struct.Session.html#method.from_env) for details.
     #[inline]
     pub fn from_env() -> Result<SyncSession> {
-        Ok(Self::new(Session::from_env()?))
+        Self::from_future(Session::from_env())
     }
 
     /// Get a reference to the authentication type in use.
@@ -720,11 +745,11 @@ mod test {
     use super::{SyncBody, SyncSession, SyncStream};
 
     fn new_simple_sync_session(url: &str) -> SyncSession {
-        SyncSession::new(test::new_simple_session(url))
+        SyncSession::from_success_future(test::new_simple_session(url))
     }
 
     fn new_sync_session(url: &str) -> SyncSession {
-        SyncSession::new(test::new_session(url, test::fake_service_info()))
+        SyncSession::from_success_future(test::new_session(url, test::fake_service_info()))
     }
 
     #[test]

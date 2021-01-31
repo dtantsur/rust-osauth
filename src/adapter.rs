@@ -41,24 +41,35 @@ impl<Srv> From<Adapter<Srv>> for Session {
 
 impl<Srv> Adapter<Srv> {
     /// Create a new adapter with a given authentication plugin.
-    pub fn new<Auth: AuthType + 'static>(auth_type: Auth, service: Srv) -> Adapter<Srv> {
-        Adapter::from_session(Session::new(auth_type), service)
+    pub async fn new<Auth: AuthType + 'static>(
+        auth_type: Auth,
+        service: Srv,
+    ) -> Result<Adapter<Srv>, Error> {
+        Ok(Adapter::from_session(
+            Session::new(auth_type).await?,
+            service,
+        ))
     }
 
     /// Create a new adapter from a `clouds.yaml` configuration file.
     ///
     /// See [Session::from_config](struct.Session.html#method.from_config) for details.
     #[inline]
-    pub fn from_config<S: AsRef<str>>(cloud_name: S, service: Srv) -> Result<Adapter<Srv>, Error> {
-        Ok(Session::from_config(cloud_name)?.into_adapter(service))
+    pub async fn from_config<S: AsRef<str>>(
+        cloud_name: S,
+        service: Srv,
+    ) -> Result<Adapter<Srv>, Error> {
+        Ok(Session::from_config(cloud_name)
+            .await?
+            .into_adapter(service))
     }
 
     /// Create a new adapter with information from environment variables.
     ///
     /// See [Session::from_env](struct.Session.html#method.from_env) for details.
     #[inline]
-    pub fn from_env(service: Srv) -> Result<Adapter<Srv>, Error> {
-        Ok(Session::from_env()?.into_adapter(service))
+    pub async fn from_env(service: Srv) -> Result<Adapter<Srv>, Error> {
+        Ok(Session::from_env().await?.into_adapter(service))
     }
 
     /// Create a new adapter from a `Session`.
@@ -180,6 +191,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let maybe_versions = adapter
     ///     .get_api_versions()
@@ -226,6 +238,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let maybe_version = adapter
@@ -273,6 +286,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let response = adapter
     ///     .request(reqwest::Method::HEAD, &["servers", "1234"], None)
@@ -337,6 +351,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// }
     ///
     /// let adapter = osauth::Adapter::from_env(osauth::services::COMPUTE)
+    ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let servers: ServersRoot = adapter
     ///     .get_json(&["servers"], None)

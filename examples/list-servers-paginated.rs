@@ -52,6 +52,7 @@ async fn main() {
         .map(|s| FromStr::from_str(&s).expect("Expected a number"));
 
     let session = osauth::Session::from_env()
+        .await
         .expect("Failed to create an identity provider from the environment");
     let adapter = session.adapter(osauth::services::COMPUTE);
 
