@@ -20,7 +20,7 @@ use static_assertions::assert_impl_all;
 
 use super::internal::Internal;
 use super::protocol;
-use super::{IdOrName, Identity, Scope};
+use super::{IdOrName, Scope};
 use crate::client::RequestBuilder;
 use crate::{AuthType, EndpointFilters, Error};
 
@@ -56,12 +56,6 @@ pub struct Token {
 }
 
 assert_impl_all!(Token: Send, Sync);
-
-impl Identity for Token {
-    fn auth_url(&self) -> &Url {
-        self.inner.auth_url()
-    }
-}
 
 impl Token {
     /// Create a token authentication.
@@ -160,17 +154,19 @@ impl AuthType for Token {
 pub mod test {
     #![allow(unused_results)]
 
+    use reqwest::Url;
+
     use super::Token;
-    use crate::identity::{IdOrName, Identity};
+    use crate::identity::IdOrName;
 
     #[test]
     fn test_identity_new() {
         let id = Token::new("http://127.0.0.1:8080/", "abcdef").unwrap();
-        let e = id.auth_url();
+        let e = Url::parse(id.inner.token_endpoint()).unwrap();
         assert_eq!(e.scheme(), "http");
         assert_eq!(e.host_str().unwrap(), "127.0.0.1");
         assert_eq!(e.port().unwrap(), 8080u16);
-        assert_eq!(e.path(), "/");
+        assert_eq!(e.path(), "/v3/auth/tokens");
     }
 
     #[test]
@@ -188,7 +184,6 @@ pub mod test {
                 IdOrName::Name("cool project".to_string()),
                 IdOrName::Name("example.com".to_string()),
             );
-        assert_eq!(id.auth_url().to_string(), "http://127.0.0.1:8080/identity");
         assert_eq!(
             id.project(),
             Some(&IdOrName::Name("cool project".to_string()))
@@ -207,7 +202,6 @@ pub mod test {
                 IdOrName::Name("cool project".to_string()),
                 IdOrName::Name("example.com".to_string()),
             );
-        assert_eq!(id.auth_url().to_string(), "http://127.0.0.1:8080/identity");
         assert_eq!(
             id.project(),
             Some(&IdOrName::Name("cool project".to_string()))
@@ -227,10 +221,6 @@ pub mod test {
                 IdOrName::Name("example.com".to_string()),
             );
         assert_eq!(
-            id.auth_url().to_string(),
-            "http://127.0.0.1:8080/identity/v3"
-        );
-        assert_eq!(
             id.project(),
             Some(&IdOrName::Name("cool project".to_string()))
         );
@@ -248,10 +238,6 @@ pub mod test {
                 IdOrName::Name("cool project".to_string()),
                 IdOrName::Name("example.com".to_string()),
             );
-        assert_eq!(
-            id.auth_url().to_string(),
-            "http://127.0.0.1:8080/identity/v3"
-        );
         assert_eq!(
             id.project(),
             Some(&IdOrName::Name("cool project".to_string()))

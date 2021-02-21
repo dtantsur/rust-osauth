@@ -22,8 +22,6 @@ mod password;
 pub(crate) mod protocol;
 mod token;
 
-use reqwest::Url;
-
 use super::common::IdOrName;
 
 pub use self::password::Password;
@@ -47,10 +45,4 @@ pub enum Scope {
         /// ID or name of the project domain.
         domain: Option<IdOrName>,
     },
-}
-
-/// Generic trait for authentication using Identity API V3.
-pub trait Identity {
-    /// Get a reference to the auth URL.
-    fn auth_url(&self) -> &Url;
 }

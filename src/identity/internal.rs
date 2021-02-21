@@ -52,7 +52,6 @@ impl fmt::Debug for Token {
 /// Internal identity authentication object.
 #[derive(Debug)]
 pub(crate) struct Internal {
-    auth_url: Url,
     body: AuthRoot,
     token_endpoint: String,
     cached_token: RwLock<Option<Token>>,
@@ -64,26 +63,20 @@ impl Internal {
         let _ = auth_url
             .path_segments_mut()
             .map_err(|_| Error::new(ErrorKind::InvalidConfig, "Invalid auth_url: wrong schema?"))?
-            .pop_if_empty();
+            .pop_if_empty()
+            .push("");
 
-        let token_endpoint = if auth_url.as_str().ends_with("/v3") {
-            format!("{}/auth/tokens", auth_url)
+        let token_endpoint = if auth_url.as_str().ends_with("/v3/") {
+            format!("{}auth/tokens", auth_url)
         } else {
-            format!("{}/v3/auth/tokens", auth_url)
+            format!("{}v3/auth/tokens", auth_url)
         };
 
         Ok(Internal {
-            auth_url,
             body,
             token_endpoint,
             cached_token: RwLock::new(None),
         })
-    }
-
-    /// Access to the auth URL.
-    #[inline]
-    pub fn auth_url(&self) -> &Url {
-        &self.auth_url
     }
 
     /// Access to the cached token.
@@ -186,7 +179,6 @@ impl Internal {
 impl Clone for Internal {
     fn clone(&self) -> Internal {
         Internal {
-            auth_url: self.auth_url.clone(),
             body: self.body.clone(),
             token_endpoint: self.token_endpoint.clone(),
             cached_token: RwLock::new(None),

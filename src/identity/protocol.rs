@@ -18,7 +18,7 @@ use chrono::{DateTime, FixedOffset};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::common::{IdAndName, IdOrName};
+use crate::common::IdOrName;
 
 /// User and password.
 #[derive(Clone, Debug, Serialize)]
@@ -103,7 +103,6 @@ pub struct CatalogRoot {
 /// An authentication token with embedded catalog.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Token {
-    pub roles: Vec<IdAndName>,
     pub expires_at: DateTime<FixedOffset>,
     pub catalog: Vec<CatalogRecord>,
 }
