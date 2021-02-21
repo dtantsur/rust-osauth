@@ -16,6 +16,7 @@
 
 use async_trait::async_trait;
 use reqwest::{Client, IntoUrl, Url};
+use static_assertions::assert_impl_all;
 
 use super::internal::Internal;
 use super::protocol;
@@ -91,6 +92,8 @@ use crate::{AuthType, EndpointFilters, Error};
 pub struct Password {
     inner: Internal,
 }
+
+assert_impl_all!(Password: Send, Sync);
 
 impl Identity for Password {
     fn auth_url(&self) -> &Url {

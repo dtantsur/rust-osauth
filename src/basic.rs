@@ -16,6 +16,7 @@
 
 use async_trait::async_trait;
 use reqwest::{Client, IntoUrl, Url};
+use static_assertions::assert_impl_all;
 
 use super::client::RequestBuilder;
 use super::{AuthType, EndpointFilters, Error};
@@ -35,6 +36,8 @@ pub struct BasicAuth {
     username: String,
     password: String,
 }
+
+assert_impl_all!(BasicAuth: Send, Sync);
 
 impl BasicAuth {
     /// Create a new HTTP basic authentication method using a fixed endpoint.

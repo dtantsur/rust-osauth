@@ -18,6 +18,7 @@ use std::fmt::Debug;
 
 use async_trait::async_trait;
 use reqwest::{Client, IntoUrl, Url};
+use static_assertions::{assert_impl_all, assert_obj_safe};
 
 use super::client::RequestBuilder;
 use super::{EndpointFilters, Error, ErrorKind};
@@ -51,6 +52,8 @@ pub trait AuthType: Debug + Sync + Send {
     async fn refresh(&self, client: &Client) -> Result<(), Error>;
 }
 
+assert_obj_safe!(AuthType);
+
 /// Authentication type that provides no authentication.
 ///
 /// This type always uses a pre-defined endpoint and sends no authenticaiton information:
@@ -63,6 +66,8 @@ pub trait AuthType: Debug + Sync + Send {
 pub struct NoAuth {
     endpoint: Option<Url>,
 }
+
+assert_impl_all!(NoAuth: Send, Sync);
 
 impl NoAuth {
     /// Create a new fake authentication method using a fixed endpoint.

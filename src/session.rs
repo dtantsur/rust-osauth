@@ -22,6 +22,7 @@ use reqwest::header::HeaderMap;
 use reqwest::{Client, Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use static_assertions::assert_impl_all;
 use tokio::sync::RwLock;
 
 use super::client::{AuthenticatedClient, RequestBuilder};
@@ -49,6 +50,8 @@ pub struct Session {
     endpoint_filters: EndpointFilters,
     endpoint_overrides: HashMap<String, Url>,
 }
+
+assert_impl_all!(Session: Sync, Send);
 
 impl Session {
     /// Create a new session with a given authentication plugin.
