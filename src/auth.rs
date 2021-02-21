@@ -17,7 +17,7 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{Client, Url};
 use static_assertions::{assert_impl_all, assert_obj_safe};
 
 use super::client::RequestBuilder;
@@ -77,10 +77,12 @@ impl NoAuth {
     #[inline]
     pub fn new<U>(endpoint: U) -> Result<NoAuth, Error>
     where
-        U: IntoUrl,
+        U: AsRef<str>,
     {
+        let endpoint = Url::parse(endpoint.as_ref())
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, e.to_string()))?;
         Ok(NoAuth {
-            endpoint: Some(endpoint.into_url()?),
+            endpoint: Some(endpoint),
         })
     }
 

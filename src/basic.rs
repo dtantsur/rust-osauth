@@ -15,11 +15,11 @@
 //! HTTP basic authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{Client, Url};
 use static_assertions::assert_impl_all;
 
 use super::client::RequestBuilder;
-use super::{AuthType, EndpointFilters, Error};
+use super::{AuthType, EndpointFilters, Error, ErrorKind};
 
 /// Authentication type that uses HTTP basic authentication.
 ///
@@ -46,12 +46,14 @@ impl BasicAuth {
     /// of the [AuthType](trait.AuthType.html) trait.
     pub fn new<U, S1, S2>(endpoint: U, username: S1, password: S2) -> Result<BasicAuth, Error>
     where
-        U: IntoUrl,
+        U: AsRef<str>,
         S1: Into<String>,
         S2: Into<String>,
     {
+        let endpoint = Url::parse(endpoint.as_ref())
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, e.to_string()))?;
         Ok(BasicAuth {
-            endpoint: endpoint.into_url()?,
+            endpoint,
             username: username.into(),
             password: password.into(),
         })

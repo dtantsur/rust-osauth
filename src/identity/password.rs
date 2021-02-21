@@ -15,7 +15,7 @@
 //! Password authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{Client, Url};
 use static_assertions::assert_impl_all;
 
 use super::internal::Internal;
@@ -104,13 +104,11 @@ impl Password {
         user_domain_name: S3,
     ) -> Result<Password, Error>
     where
-        U: IntoUrl,
+        U: AsRef<str>,
         S1: Into<String>,
         S2: Into<String>,
         S3: Into<String>,
     {
-        let auth_url = auth_url.into_url()?;
-
         let pw = protocol::UserAndPassword {
             user: IdOrName::Name(user_name.into()),
             password: password.into(),
@@ -123,7 +121,7 @@ impl Password {
             },
         };
         Ok(Password {
-            inner: Internal::new(auth_url, body)?,
+            inner: Internal::new(auth_url.as_ref(), body)?,
         })
     }
 
@@ -326,6 +324,25 @@ pub mod test {
         assert_eq!(
             id.inner.token_endpoint(),
             "http://127.0.0.1:8080/identity/v3/auth/tokens"
+        );
+    }
+
+    #[test]
+    fn test_token_endpoint_root() {
+        let id = Password::new("http://127.0.0.1:8080", "user", "pa$$w0rd", "example.com")
+            .unwrap()
+            .with_project_scope(
+                IdOrName::Name("cool project".to_string()),
+                IdOrName::Name("example.com".to_string()),
+            );
+        assert_eq!(id.user(), &IdOrName::Name("user".to_string()));
+        assert_eq!(
+            id.project(),
+            Some(&IdOrName::Name("cool project".to_string()))
+        );
+        assert_eq!(
+            id.inner.token_endpoint(),
+            "http://127.0.0.1:8080/v3/auth/tokens"
         );
     }
 }

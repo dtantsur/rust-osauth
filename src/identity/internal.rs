@@ -59,7 +59,10 @@ pub(crate) struct Internal {
 
 impl Internal {
     /// Create a new implementation.
-    pub fn new(mut auth_url: Url, body: AuthRoot) -> Result<Internal, Error> {
+    pub fn new(auth_url: &str, body: AuthRoot) -> Result<Internal, Error> {
+        let mut auth_url = Url::parse(auth_url)
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("Invalid auth_url: {}", e)))?;
+
         let _ = auth_url
             .path_segments_mut()
             .map_err(|_| Error::new(ErrorKind::InvalidConfig, "Invalid auth_url: wrong schema?"))?
