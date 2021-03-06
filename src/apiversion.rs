@@ -49,7 +49,7 @@ impl FromStr for ApiVersion {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<ApiVersion, Error> {
-        let version_part = if s.starts_with('v') { &s[1..] } else { &s };
+        let version_part = s.strip_prefix('v').unwrap_or(s);
         let parts: Vec<&str> = version_part.split('.').collect();
 
         if parts.is_empty() || parts.len() > 2 {
