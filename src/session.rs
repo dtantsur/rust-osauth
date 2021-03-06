@@ -716,11 +716,9 @@ impl Session {
         } else {
             let ep = match self.endpoint_overrides.get(catalog_type) {
                 Some(found) => found.clone(),
-                None => {
-                    self.client
-                        .get_endpoint(catalog_type.to_string(), self.endpoint_filters.clone())
-                        .await?
-                }
+                None => self
+                    .client
+                    .get_endpoint(catalog_type, &self.endpoint_filters)?,
             };
             let info = ServiceInfo::fetch(service, ep, &self.client).await?;
             let value = filter(&info);

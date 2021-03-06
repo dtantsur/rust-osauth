@@ -431,8 +431,8 @@ mod test_cloud_config {
         assert!(cfg.create_session_config().is_err());
     }
 
-    #[tokio::test]
-    async fn test_create_session_config_none_auth() {
+    #[test]
+    fn test_create_session_config_none_auth() {
         let options = hashmap! {
             "baremetal_endpoint_override".into() => "http://127.0.0.1/baremetal".into(),
         };
@@ -444,13 +444,12 @@ mod test_cloud_config {
         let sscfg = cfg.create_session_config().unwrap();
         assert!(sscfg
             .client
-            .get_endpoint("baremetal".into(), Default::default())
-            .await
+            .get_endpoint("baremetal", &Default::default())
             .is_err());
     }
 
-    #[tokio::test]
-    async fn test_create_session_config_basic_auth() {
+    #[test]
+    fn test_create_session_config_basic_auth() {
         let cfg = CloudConfig {
             auth_type: Some("http_basic".into()),
             auth: Some(Auth {
@@ -465,8 +464,7 @@ mod test_cloud_config {
         assert_eq!(
             sscfg
                 .client
-                .get_endpoint("baremetal".into(), Default::default())
-                .await
+                .get_endpoint("baremetal", &Default::default())
                 .unwrap()
                 .as_str(),
             "http://127.0.0.1/"

@@ -14,15 +14,15 @@
 
 //! Internal implementation of the identity authentication.
 
-use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::{collections::hash_map::DefaultHasher, sync::RwLock};
 
 use chrono::{DateTime, Duration, FixedOffset, Local};
 use log::{debug, error, trace};
 use reqwest::{Client, Response, Url};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::{RwLock as AsyncRwLock, RwLockReadGuard};
 
 use super::protocol::{self, AuthRoot};
 use super::{IdOrName, Scope, INVALID_SUBJECT_HEADER, MISSING_SUBJECT_HEADER, TOKEN_MIN_VALIDITY};
@@ -35,7 +35,6 @@ use crate::{EndpointFilters, Error, ErrorKind};
 pub(crate) struct Token {
     value: String,
     expires_at: DateTime<FixedOffset>,
-    catalog: ServiceCatalog,
 }
 
 static_assertions::assert_eq_size!(Option<Token>, Token);
@@ -44,12 +43,10 @@ impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut hasher = DefaultHasher::new();
         self.value.hash(&mut hasher);
-        write!(
-            f,
-            "Token {{ value: hash({}), catalog: {:?} }}",
-            hasher.finish(),
-            self.catalog
-        )
+        f.debug_struct("Token")
+            .field("hash(value)", &hasher.finish())
+            .field("expires_at", &self.expires_at)
+            .finish()
     }
 }
 
@@ -58,7 +55,8 @@ impl fmt::Debug for Token {
 pub(crate) struct Internal {
     body: AuthRoot,
     token_endpoint: String,
-    cached_token: RwLock<Option<Token>>,
+    cached_token: AsyncRwLock<Option<Token>>,
+    catalog: RwLock<ServiceCatalog>,
 }
 
 impl Internal {
@@ -82,7 +80,8 @@ impl Internal {
         Ok(Internal {
             body,
             token_endpoint,
-            cached_token: RwLock::new(None),
+            cached_token: AsyncRwLock::new(None),
+            catalog: RwLock::new(ServiceCatalog::empty()),
         })
     }
 
@@ -95,18 +94,13 @@ impl Internal {
     }
 
     /// Get a URL for the requested service.
-    pub async fn get_endpoint(
+    pub fn get_endpoint(
         &self,
-        client: &Client,
-        service_type: String,
-        filters: EndpointFilters,
+        service_type: &str,
+        filters: &EndpointFilters,
     ) -> Result<Url, Error> {
-        debug!(
-            "Requesting a catalog endpoint for service '{}', filters {:?}",
-            service_type, filters
-        );
-        let token = self.cached_token(client).await?;
-        token.catalog.find_endpoint(&service_type, &filters)
+        let catalog = self.catalog.read().expect("Poisoned service catalog lock");
+        catalog.find_endpoint(service_type, filters)
     }
 
     /// Get the authentication token string.
@@ -163,7 +157,13 @@ impl Internal {
             .json(&self.body)
             .send()
             .await?;
-        *lock = Some(token_from_response(client::check(resp).await?).await?);
+        let (token, catalog) = token_from_response(client::check(resp).await?).await?;
+        *lock = Some(token);
+
+        // We're using a secondary lock here because catalog is accessed in non-async context too
+        let mut catalog_lock = self.catalog.write().expect("Poisoned service catalog lock");
+        *catalog_lock = catalog;
+
         Ok(())
     }
 
@@ -183,16 +183,6 @@ impl Internal {
     }
 }
 
-impl Clone for Internal {
-    fn clone(&self) -> Internal {
-        Internal {
-            body: self.body.clone(),
-            token_endpoint: self.token_endpoint.clone(),
-            cached_token: RwLock::new(None),
-        }
-    }
-}
-
 #[inline]
 fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
     if let Some(value) = token.deref() {
@@ -204,7 +194,7 @@ fn token_alive(token: &impl Deref<Target = Option<Token>>) -> bool {
     }
 }
 
-async fn token_from_response(resp: Response) -> Result<Token, Error> {
+async fn token_from_response(resp: Response) -> Result<(Token, ServiceCatalog), Error> {
     let value = match resp.headers().get("x-subject-token") {
         Some(hdr) => match hdr.to_str() {
             Ok(s) => Ok(s.to_string()),
@@ -233,9 +223,11 @@ async fn token_from_response(resp: Response) -> Result<Token, Error> {
     let root = resp.json::<protocol::TokenRoot>().await?;
     debug!("Received a token expiring at {}", root.token.expires_at);
     trace!("Received catalog: {:?}", root.token.catalog);
-    Ok(Token {
-        value,
-        expires_at: root.token.expires_at,
-        catalog: ServiceCatalog::new(root.token.catalog),
-    })
+    Ok((
+        Token {
+            value,
+            expires_at: root.token.expires_at,
+        },
+        ServiceCatalog::new(root.token.catalog),
+    ))
 }
