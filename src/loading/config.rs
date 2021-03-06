@@ -206,7 +206,7 @@ pub fn from_config(cloud_name: &str) -> Result<CloudConfig, Error> {
     let clouds_public = read_yaml("clouds-public.yaml", Some("public-clouds"))?;
     let secure = read_yaml("secure.yaml", Some("clouds"))?;
 
-    from_files(cloud_name.as_ref(), clouds, clouds_public, secure)
+    from_files(cloud_name, clouds, clouds_public, secure)
 }
 
 #[cfg(test)]

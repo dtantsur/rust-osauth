@@ -247,15 +247,13 @@ impl CloudConfig {
         let endpoint_overrides = self.create_endpoint_overrides()?;
         let auth = if let Some(auth_info) = self.auth {
             auth_info.create_auth(self.auth_type)?
+        } else if self.auth_type.map(|x| x == "none").unwrap_or(false) {
+            Arc::new(NoAuth::new_without_endpoint())
         } else {
-            if self.auth_type.map(|x| x == "none").unwrap_or(false) {
-                Arc::new(NoAuth::new_without_endpoint())
-            } else {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    "Credentials can be missing only for none authentication",
-                ));
-            }
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Credentials can be missing only for none authentication",
+            ));
         };
         let client = AuthenticatedClient::new_internal(super::get_client(self.cacert)?, auth);
         let interface = if let Some(interface) = self.interface {

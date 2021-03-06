@@ -354,7 +354,7 @@ impl RequestBuilder {
         self.inner.try_clone().map(RequestBuilder::new)
     }
 
-    pub(crate) fn basic_auth(self, username: &String, password: &String) -> RequestBuilder {
+    pub(crate) fn basic_auth(self, username: &str, password: &str) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.basic_auth(username, Some(password)),
         }

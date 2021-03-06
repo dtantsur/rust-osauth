@@ -141,7 +141,7 @@ impl TryFrom<Version> for ServiceInfo {
 
         Ok(ServiceInfo {
             root_url: endpoint,
-            major_version: Some(value.id.into()),
+            major_version: Some(value.id),
             current_version: value.version.map(From::from),
             minimum_version: value.min_version.map(From::from),
         })
@@ -171,7 +171,7 @@ impl ServiceInfo {
         );
 
         if let Root::OneVersion { version: ver } = value {
-            if service.major_version_supported(ver.id.into()) {
+            if service.major_version_supported(ver.id) {
                 if !ver.is_stable() {
                     warn!(
                         "Using version {:?} of {} API that is not marked as stable",
@@ -196,7 +196,7 @@ impl ServiceInfo {
             value.sort();
             value
                 .into_stable_iter()
-                .rfind(|x| service.major_version_supported(x.id.into()))
+                .rfind(|x| service.major_version_supported(x.id))
                 .ok_or_else(|| Error::new_endpoint_not_found(service.catalog_type()))
                 .and_then(TryFrom::try_from)
         }
