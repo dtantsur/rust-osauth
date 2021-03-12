@@ -15,10 +15,9 @@
 //! HTTP basic authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, Url};
+use reqwest::{Client, RequestBuilder, Url};
 use static_assertions::assert_impl_all;
 
-use super::client::RequestBuilder;
 use super::{AuthType, EndpointFilters, Error, ErrorKind};
 
 /// Authentication type that uses HTTP basic authentication.
@@ -68,7 +67,7 @@ impl AuthType for BasicAuth {
         _client: &Client,
         request: RequestBuilder,
     ) -> Result<RequestBuilder, Error> {
-        Ok(request.basic_auth(&self.username, &self.password))
+        Ok(request.basic_auth(&self.username, Some(&self.password)))
     }
 
     /// Get a predefined endpoint for all service types

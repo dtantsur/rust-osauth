@@ -17,10 +17,9 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use reqwest::{Client, Url};
+use reqwest::{Client, RequestBuilder, Url};
 use static_assertions::{assert_impl_all, assert_obj_safe};
 
-use super::client::RequestBuilder;
 use super::{EndpointFilters, Error, ErrorKind};
 
 /// Trait for an authentication type.

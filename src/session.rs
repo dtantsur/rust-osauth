@@ -488,7 +488,7 @@ impl Session {
             url,
             api_version
         );
-        let mut builder = self.client.request(method, url).await?;
+        let mut builder = self.client.request(method, url);
         if let Some(version) = api_version {
             let mut headers = HeaderMap::new();
             service.set_api_version_headers(&mut headers, version)?;

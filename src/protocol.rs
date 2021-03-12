@@ -155,11 +155,7 @@ async fn fetch_root(
     client: &AuthenticatedClient,
 ) -> Result<Root, Error> {
     debug!("Fetching {} service info from {}", catalog_type, endpoint);
-    client
-        .request(Method::GET, endpoint)
-        .await?
-        .fetch_json()
-        .await
+    client.request(Method::GET, endpoint).fetch_json().await
 }
 
 impl ServiceInfo {

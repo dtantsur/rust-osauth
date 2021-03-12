@@ -15,13 +15,12 @@
 //! Password authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, Url};
+use reqwest::{Client, RequestBuilder, Url};
 use static_assertions::assert_impl_all;
 
 use super::internal::Internal;
 use super::protocol;
 use super::Scope;
-use crate::client::RequestBuilder;
 use crate::common::IdOrName;
 use crate::{AuthType, EndpointFilters, Error};
 

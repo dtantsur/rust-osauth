@@ -21,13 +21,13 @@ use std::{collections::hash_map::DefaultHasher, sync::RwLock};
 
 use chrono::{DateTime, Duration, FixedOffset, Local};
 use log::{debug, error, trace};
-use reqwest::{Client, Response, Url};
+use reqwest::{Client, RequestBuilder, Response, Url};
 use tokio::sync::{RwLock as AsyncRwLock, RwLockReadGuard};
 
 use super::protocol::{self, AuthRoot};
 use super::{IdOrName, Scope, INVALID_SUBJECT_HEADER, MISSING_SUBJECT_HEADER, TOKEN_MIN_VALIDITY};
 use crate::catalog::ServiceCatalog;
-use crate::client::{self, RequestBuilder};
+use crate::client;
 use crate::{EndpointFilters, Error, ErrorKind};
 
 /// Plain authentication token without additional details.

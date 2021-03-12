@@ -15,13 +15,12 @@
 //! Token authentication.
 
 use async_trait::async_trait;
-use reqwest::{Client, Url};
+use reqwest::{Client, RequestBuilder, Url};
 use static_assertions::assert_impl_all;
 
 use super::internal::Internal;
 use super::protocol;
 use super::{IdOrName, Scope};
-use crate::client::RequestBuilder;
 use crate::{AuthType, EndpointFilters, Error};
 
 /// Token authentication using Identity API V3.

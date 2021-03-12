@@ -27,6 +27,7 @@ use log::trace;
 use reqwest::{Body, Client, Method, RequestBuilder as HttpRequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use static_assertions::assert_eq_size;
 
 #[cfg(feature = "stream")]
 use super::stream::paginated;
@@ -60,6 +61,8 @@ pub struct AuthenticatedClient {
     client: Client,
     auth: Arc<dyn AuthType>,
 }
+
+assert_eq_size!(AuthenticatedClient, Option<AuthenticatedClient>);
 
 impl AuthenticatedClient {
     /// Create a new authenticated client.
@@ -126,13 +129,8 @@ impl AuthenticatedClient {
 
     /// Start an authenticated request.
     #[inline]
-    pub async fn request(&self, method: Method, url: Url) -> Result<RequestBuilder, Error> {
-        self.auth
-            .authenticate(
-                &self.client,
-                RequestBuilder::new(self.client.request(method, url)),
-            )
-            .await
+    pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
+        RequestBuilder::new(self.client.request(method, url), self.clone())
     }
 }
 
@@ -147,18 +145,7 @@ impl From<AuthenticatedClient> for Client {
 #[must_use = "preparing a request is not enough to run it"]
 pub struct RequestBuilder {
     inner: HttpRequestBuilder,
-}
-
-impl From<HttpRequestBuilder> for RequestBuilder {
-    fn from(value: HttpRequestBuilder) -> RequestBuilder {
-        RequestBuilder { inner: value }
-    }
-}
-
-impl From<RequestBuilder> for HttpRequestBuilder {
-    fn from(value: RequestBuilder) -> HttpRequestBuilder {
-        value.inner
-    }
+    client: AuthenticatedClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,14 +190,15 @@ pub async fn check(response: Response) -> Result<Response, Error> {
 
 impl RequestBuilder {
     #[inline]
-    fn new(inner: HttpRequestBuilder) -> RequestBuilder {
-        RequestBuilder { inner }
+    fn new(inner: HttpRequestBuilder, client: AuthenticatedClient) -> RequestBuilder {
+        RequestBuilder { inner, client }
     }
 
     /// Add a body to the request.
     pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.body(body),
+            ..self
         }
     }
 
@@ -224,6 +212,7 @@ impl RequestBuilder {
     {
         RequestBuilder {
             inner: self.inner.header(key, value),
+            ..self
         }
     }
 
@@ -231,6 +220,7 @@ impl RequestBuilder {
     pub fn headers(self, headers: HeaderMap) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.headers(headers),
+            ..self
         }
     }
 
@@ -238,6 +228,7 @@ impl RequestBuilder {
     pub fn json<T: Serialize + ?Sized>(self, json: &T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.json(json),
+            ..self
         }
     }
 
@@ -245,6 +236,7 @@ impl RequestBuilder {
     pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.query(query),
+            ..self
         }
     }
 
@@ -252,6 +244,7 @@ impl RequestBuilder {
     pub fn timeout(self, timeout: Duration) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.timeout(timeout),
+            ..self
         }
     }
 
@@ -344,17 +337,19 @@ impl RequestBuilder {
 
     /// Send the request without checking for HTTP and OpenStack errors.
     pub async fn send_unchecked(self) -> Result<Response, Error> {
-        self.inner.send().await.map_err(Error::from)
+        let rb = self
+            .client
+            .auth
+            .authenticate(&self.client.client, self.inner)
+            .await?;
+        rb.send().await.map_err(Error::from)
     }
 
     /// Attempt to clone this request builder.
     pub fn try_clone(&self) -> Option<RequestBuilder> {
-        self.inner.try_clone().map(RequestBuilder::new)
-    }
-
-    pub(crate) fn basic_auth(self, username: &str, password: &str) -> RequestBuilder {
-        RequestBuilder {
-            inner: self.inner.basic_auth(username, Some(password)),
-        }
+        self.inner.try_clone().map(|inner| RequestBuilder {
+            inner,
+            client: self.client.clone(),
+        })
     }
 }
