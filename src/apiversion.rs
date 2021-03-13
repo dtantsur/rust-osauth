@@ -45,6 +45,12 @@ impl From<ApiVersion> for HeaderValue {
     }
 }
 
+impl From<(u16, u16)> for ApiVersion {
+    fn from(value: (u16, u16)) -> ApiVersion {
+        ApiVersion(value.0, value.1)
+    }
+}
+
 impl FromStr for ApiVersion {
     type Err = Error;
 

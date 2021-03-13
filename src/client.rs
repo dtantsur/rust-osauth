@@ -29,6 +29,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
 
+use crate::{services::VersionedService, ApiVersion};
+
 #[cfg(feature = "stream")]
 use super::stream::paginated;
 #[cfg(feature = "stream")]
@@ -130,7 +132,21 @@ impl AuthenticatedClient {
     /// Start an authenticated request.
     #[inline]
     pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        RequestBuilder::new(self.client.request(method, url), self.clone())
+        self.request_service((), method, url)
+    }
+
+    /// Start an authenticated request for a service.
+    pub(crate) fn request_service<S>(
+        &self,
+        service: S,
+        method: Method,
+        url: Url,
+    ) -> RequestBuilder<S> {
+        RequestBuilder {
+            inner: self.client.request(method, url),
+            client: self.clone(),
+            service,
+        }
     }
 }
 
@@ -141,11 +157,14 @@ impl From<AuthenticatedClient> for Client {
 }
 
 /// A request builder with error handling.
+///
+/// If the type parameter `S` is a service, additional functionality is available.
 #[derive(Debug)]
 #[must_use = "preparing a request is not enough to run it"]
-pub struct RequestBuilder {
+pub struct RequestBuilder<S = ()> {
     inner: HttpRequestBuilder,
     client: AuthenticatedClient,
+    service: S,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,14 +207,9 @@ pub async fn check(response: Response) -> Result<Response, Error> {
     }
 }
 
-impl RequestBuilder {
-    #[inline]
-    fn new(inner: HttpRequestBuilder, client: AuthenticatedClient) -> RequestBuilder {
-        RequestBuilder { inner, client }
-    }
-
+impl<S> RequestBuilder<S> {
     /// Add a body to the request.
-    pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder {
+    pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder<S> {
         RequestBuilder {
             inner: self.inner.body(body),
             ..self
@@ -203,7 +217,7 @@ impl RequestBuilder {
     }
 
     /// Add a header to the request.
-    pub fn header<K, V>(self, key: K, value: V) -> RequestBuilder
+    pub fn header<K, V>(self, key: K, value: V) -> RequestBuilder<S>
     where
         HeaderName: TryFrom<K>,
         <HeaderName as TryFrom<K>>::Error: Into<HttpError>,
@@ -217,7 +231,7 @@ impl RequestBuilder {
     }
 
     /// Add headers to a request.
-    pub fn headers(self, headers: HeaderMap) -> RequestBuilder {
+    pub fn headers(self, headers: HeaderMap) -> RequestBuilder<S> {
         RequestBuilder {
             inner: self.inner.headers(headers),
             ..self
@@ -225,7 +239,7 @@ impl RequestBuilder {
     }
 
     /// Add a JSON body to the request.
-    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> RequestBuilder {
+    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> RequestBuilder<S> {
         RequestBuilder {
             inner: self.inner.json(json),
             ..self
@@ -233,7 +247,7 @@ impl RequestBuilder {
     }
 
     /// Send a query with the request.
-    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder {
+    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder<S> {
         RequestBuilder {
             inner: self.inner.query(query),
             ..self
@@ -241,7 +255,7 @@ impl RequestBuilder {
     }
 
     /// Override the timeout for the request.
-    pub fn timeout(self, timeout: Duration) -> RequestBuilder {
+    pub fn timeout(self, timeout: Duration) -> RequestBuilder<S> {
         RequestBuilder {
             inner: self.inner.timeout(timeout),
             ..self
@@ -256,6 +270,44 @@ impl RequestBuilder {
         self.send().await?.json::<T>().await.map_err(Error::from)
     }
 
+    /// Send the request and check for errors.
+    pub async fn send(self) -> Result<Response, Error> {
+        check(self.send_unchecked().await?).await
+    }
+
+    /// Send the request without checking for HTTP and OpenStack errors.
+    pub async fn send_unchecked(self) -> Result<Response, Error> {
+        let rb = self
+            .client
+            .auth
+            .authenticate(&self.client.client, self.inner)
+            .await?;
+        rb.send().await.map_err(Error::from)
+    }
+}
+
+impl<S> RequestBuilder<S>
+where
+    S: VersionedService,
+{
+    /// Add an API version to this request.
+    pub fn api_version<A: Into<ApiVersion>>(self, version: A) -> RequestBuilder<S> {
+        RequestBuilder {
+            inner: self.service.add_version_header(self.inner, version.into()),
+            ..self
+        }
+    }
+
+    /// Set the API version on the request.
+    pub fn set_api_version<A: Into<ApiVersion>>(&mut self, version: A) {
+        take_mut::take(self, |rb| rb.api_version(version));
+    }
+}
+
+impl<S> RequestBuilder<S>
+where
+    S: Clone,
+{
     /// Send the request and receive JSON in response with pagination.
     ///
     /// Note that the actual requests will happen only on iteration over the results.
@@ -330,26 +382,54 @@ impl RequestBuilder {
         paginated(self, limit, starting_with)
     }
 
-    /// Send the request and check for errors.
-    pub async fn send(self) -> Result<Response, Error> {
-        check(self.send_unchecked().await?).await
-    }
-
-    /// Send the request without checking for HTTP and OpenStack errors.
-    pub async fn send_unchecked(self) -> Result<Response, Error> {
-        let rb = self
-            .client
-            .auth
-            .authenticate(&self.client.client, self.inner)
-            .await?;
-        rb.send().await.map_err(Error::from)
-    }
-
     /// Attempt to clone this request builder.
-    pub fn try_clone(&self) -> Option<RequestBuilder> {
+    pub fn try_clone(&self) -> Option<RequestBuilder<S>> {
         self.inner.try_clone().map(|inner| RequestBuilder {
             inner,
             client: self.client.clone(),
+            service: self.service.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod test_request_builder {
+    use http::Method;
+    use reqwest::{Client, Url};
+
+    use crate::{services, NoAuth};
+
+    use super::AuthenticatedClient;
+
+    #[tokio::test]
+    async fn test_api_version() {
+        let rb = AuthenticatedClient::new(Client::new(), NoAuth::new_without_endpoint())
+            .await
+            .unwrap()
+            .request_service(
+                services::BAREMETAL,
+                Method::GET,
+                Url::parse("http://127.0.0.1").unwrap(),
+            )
+            .api_version((1, 42));
+        let req = rb.inner.build().unwrap();
+        let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
+        assert_eq!(hdr.to_str().unwrap(), "1.42");
+    }
+
+    #[tokio::test]
+    async fn test_set_api_version() {
+        let mut rb = AuthenticatedClient::new(Client::new(), NoAuth::new_without_endpoint())
+            .await
+            .unwrap()
+            .request_service(
+                services::BAREMETAL,
+                Method::GET,
+                Url::parse("http://127.0.0.1").unwrap(),
+            );
+        rb.set_api_version((1, 42));
+        let req = rb.inner.build().unwrap();
+        let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
+        assert_eq!(hdr.to_str().unwrap(), "1.42");
     }
 }
