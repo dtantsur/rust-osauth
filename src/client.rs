@@ -169,7 +169,37 @@ pub struct RequestBuilder<S = ()> {
 
 #[derive(Debug, Deserialize)]
 struct Message {
-    message: String,
+    message: Option<String>,
+    faultstring: Option<String>,
+    title: Option<String>,
+    // Ironic legacy format: JSON inside JSON (sigh)
+    error_message: Option<String>,
+}
+
+impl Message {
+    fn convert(self, recursive: bool) -> Option<String> {
+        if let Some(value) = self.message.or(self.faultstring).or(self.title) {
+            println!("Normal {}", value);
+            Some(value)
+        } else if recursive {
+            if let Some(json) = self.error_message {
+                return serde_json::from_str::<Message>(&json).ok().and_then(|msg| {
+                    println!("submessage {:?}", msg);
+                    msg.convert(false)
+                });
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl From<Message> for Option<String> {
+    fn from(value: Message) -> Option<String> {
+        value.convert(true)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -179,23 +209,22 @@ enum ErrorResponse {
     Message(Message),
 }
 
-async fn extract_message(resp: Response) -> Result<String, Error> {
-    let text = resp.text().await?;
-    Ok(serde_json::from_str::<ErrorResponse>(&text)
+fn extract_message(text: String) -> String {
+    serde_json::from_str::<ErrorResponse>(&text)
         .ok()
         .and_then(|body| match body {
-            ErrorResponse::Map(map) => map.into_iter().next().map(|(_k, v)| v.message),
-            ErrorResponse::Message(msg) => Some(msg.message),
+            ErrorResponse::Map(map) => map.into_iter().next().and_then(|(_k, v)| v.into()),
+            ErrorResponse::Message(msg) => msg.into(),
         })
-        .unwrap_or(text))
+        .unwrap_or(text)
 }
 
 /// Check for OpenStack errors in the response.
 pub async fn check(response: Response) -> Result<Response, Error> {
     let status = response.status();
     if status.is_client_error() || status.is_server_error() {
-        let message = extract_message(response).await?;
-        trace!("HTTP request returned {}; error: {:?}", status, message);
+        let message = extract_message(response.text().await?);
+        trace!("HTTP request returned {}; error: {}", status, message);
         Err(Error::new(status.into(), message).with_status(status))
     } else {
         trace!(
@@ -431,5 +460,45 @@ mod test_request_builder {
         let req = rb.inner.build().unwrap();
         let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
         assert_eq!(hdr.to_str().unwrap(), "1.42");
+    }
+}
+
+#[cfg(test)]
+mod test_extract_message {
+    use super::extract_message;
+
+    #[test]
+    fn test_plain() {
+        let msg = "<html><body>I failed</body></html>";
+        let result = extract_message(msg.to_string());
+        assert_eq!(result, msg);
+    }
+
+    #[test]
+    fn test_simple_message() {
+        let msg = r#"{"message": "I failed"}"#;
+        let result = extract_message(msg.to_string());
+        assert_eq!(result, "I failed");
+    }
+
+    #[test]
+    fn test_nested_message() {
+        let msg = r#"{"SomethingFailed": {"message": "I failed"}}"#;
+        let result = extract_message(msg.to_string());
+        assert_eq!(result, "I failed");
+    }
+
+    #[test]
+    fn test_ironic_message() {
+        let msg = r#"{"error_message": {"faultstring": "I failed"}}"#;
+        let result = extract_message(msg.to_string());
+        assert_eq!(result, "I failed");
+    }
+
+    #[test]
+    fn test_ironic_legacy() {
+        let msg = r#"{"error_message": "{\"faultstring\": \"I failed\"}"}"#;
+        let result = extract_message(msg.to_string());
+        assert_eq!(result, "I failed");
     }
 }
