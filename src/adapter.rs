@@ -14,9 +14,12 @@
 
 //! Adapter for a specific service.
 
+use http::{header::HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+
+use crate::services::VersionedService;
 
 use super::client::RequestBuilder;
 use super::services::ServiceType;
@@ -31,6 +34,7 @@ pub struct Adapter<Srv> {
     inner: Session,
     service: Srv,
     default_api_version: Option<ApiVersion>,
+    api_version_header: Option<(HeaderName, HeaderValue)>,
 }
 
 impl<Srv> From<Adapter<Srv>> for Session {
@@ -79,6 +83,7 @@ impl<Srv> Adapter<Srv> {
             inner: session,
             service,
             default_api_version: None,
+            api_version_header: None,
         }
     }
 
@@ -86,12 +91,6 @@ impl<Srv> Adapter<Srv> {
     #[inline]
     pub fn auth_type(&self) -> &dyn AuthType {
         self.inner.auth_type()
-    }
-
-    /// Default API version used when no version is specified.
-    #[inline]
-    pub fn default_api_version(&self) -> Option<ApiVersion> {
-        self.default_api_version
     }
 
     /// Endpoint filters in use.
@@ -135,15 +134,6 @@ impl<Srv> Adapter<Srv> {
         self.inner.set_auth_type(auth_type)
     }
 
-    /// Set the default API version.
-    ///
-    /// This version will be used when no version is specified. No checks are done against this
-    /// version inside of this call. If it is not valid, the subsequent `request` calls will fail.
-    #[inline]
-    pub fn set_default_api_version(&mut self, api_version: Option<ApiVersion>) {
-        self.default_api_version = api_version;
-    }
-
     /// A convenience call to set an endpoint interface.
     ///
     /// This call clears the cached service information for this `Adapter`.
@@ -160,13 +150,6 @@ impl<Srv> Adapter<Srv> {
         self
     }
 
-    /// Convert this adapter into one using the given default API version.
-    #[inline]
-    pub fn with_default_api_version(mut self, api_version: Option<ApiVersion>) -> Adapter<Srv> {
-        self.set_default_api_version(api_version);
-        self
-    }
-
     /// Convert this adapter into one using the given endpoint filters.
     #[inline]
     pub fn with_endpoint_filters(mut self, endpoint_filters: EndpointFilters) -> Adapter<Srv> {
@@ -178,6 +161,35 @@ impl<Srv> Adapter<Srv> {
     #[inline]
     pub fn with_endpoint_interface(mut self, endpoint_interface: InterfaceType) -> Adapter<Srv> {
         self.set_endpoint_interface(endpoint_interface);
+        self
+    }
+}
+
+impl<Srv> Adapter<Srv>
+where
+    Srv: VersionedService,
+{
+    /// Default API version used when no version is specified.
+    #[inline]
+    pub fn default_api_version(&self) -> Option<ApiVersion> {
+        self.default_api_version
+    }
+
+    /// Set the default API version.
+    ///
+    /// This version will be used when no version is specified. No checks are done against this
+    /// version inside of this call. If it is not valid, the subsequent `request` calls will fail.
+    #[inline]
+    pub fn set_default_api_version(&mut self, api_version: Option<ApiVersion>) {
+        self.default_api_version = api_version;
+        self.api_version_header =
+            api_version.map(|version| self.service.get_version_header(version));
+    }
+
+    /// Convert this adapter into one using the given default API version.
+    #[inline]
+    pub fn with_default_api_version(mut self, api_version: Option<ApiVersion>) -> Adapter<Srv> {
+        self.set_default_api_version(api_version);
         self
     }
 }
@@ -244,12 +256,15 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// let maybe_version = adapter
     ///     .pick_api_version(candidates)
     ///     .await?;
-    /// if let Some(version) = maybe_version {
+    ///
+    /// let request = adapter.get(&["servers"]).await?;
+    /// let response = if let Some(version) = maybe_version {
     ///     println!("Using version {}", version);
+    ///     request.api_version(version)
     /// } else {
     ///     println!("Using the base version");
-    /// }
-    /// let response = adapter.get(&["servers"], maybe_version).await?;
+    ///     request
+    /// }.send().await?;
     /// # Ok(()) }
     /// # #[tokio::main]
     /// # async fn main() { example().await.unwrap(); }
@@ -276,10 +291,6 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// The `path` argument is a URL path without the service endpoint (e.g. `/servers/1234`).
     ///
-    /// If `api_version` is set, it is send with the request to enable a higher API version.
-    /// Otherwise the base API version is used. You can use
-    /// [pick_api_version](#method.pick_api_version) to choose an API version to use.
-    ///
     /// The result is a `RequestBuilder` that can be customized further. Error checking and response
     /// parsing can be done using functions from the [request](request/index.html) module.
     ///
@@ -289,7 +300,9 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let response = adapter
-    ///     .request(reqwest::Method::HEAD, &["servers", "1234"], None)
+    ///     .request(reqwest::Method::HEAD, &["servers", "1234"])
+    ///     .await?
+    ///     .send()
     ///     .await?;
     /// println!("Response: {:?}", response);
     /// # Ok(()) }
@@ -299,38 +312,37 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// This is the most generic call to make a request. You may prefer to use more specific `get`,
     /// `post`, `put` or `delete` calls instead.
-    pub async fn request<I>(
-        &self,
-        method: Method,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn request<I>(&self, method: Method, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        let real_version = api_version.or(self.default_api_version);
-        self.inner
-            .request(self.service.clone(), method, path, real_version)
-            .await
+        let rb = self
+            .inner
+            .request(self.service.clone(), method, path)
+            .await?;
+
+        Ok(
+            if let Some((name, value)) = self.api_version_header.clone() {
+                rb.header(name, value)
+            } else {
+                rb
+            },
+        )
     }
 
     /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn get<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(Method::GET, path, api_version).await
+        self.request(Method::GET, path).await
     }
 
     /// Fetch a JSON using the GET request.
@@ -354,7 +366,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let servers: ServersRoot = adapter
-    ///     .get_json(&["servers"], None)
+    ///     .get_json(&["servers"])
     ///     .await?;
     /// for srv in servers.servers {
     ///     println!("ID = {}, Name = {}", srv.id, srv.name);
@@ -366,14 +378,14 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get_json<I, T>(&self, path: I, api_version: Option<ApiVersion>) -> Result<T, Error>
+    pub async fn get_json<I, T>(&self, path: I) -> Result<T, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        self.request(Method::GET, path, api_version)
+        self.request(Method::GET, path)
             .await?
             .fetch_json::<T>()
             .await
@@ -383,17 +395,13 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn post<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(Method::POST, path, api_version).await
+        self.request(Method::POST, path).await
     }
 
     /// POST a JSON object.
@@ -402,49 +410,40 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn post_json<I, T>(
-        &self,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn post_json<I, T>(&self, path: I, body: T) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        Ok(self.post(path, api_version).await?.json(&body))
+        Ok(self.post(path).await?.json(&body))
     }
 
     /// Start a PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn put<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(Method::PUT, path, api_version).await
+        self.request(Method::PUT, path).await
     }
 
     /// Issue an empty PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put_empty<I>(&self, path: I, api_version: Option<ApiVersion>) -> Result<(), Error>
+    pub async fn put_empty<I>(&self, path: I) -> Result<(), Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(Method::PUT, path, api_version)
+        self.request(Method::PUT, path)
             .await?
             .send()
             .await
@@ -457,35 +456,26 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn put_json<I, T>(
-        &self,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn put_json<I, T>(&self, path: I, body: T) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        Ok(self.put(path, api_version).await?.json(&body))
+        Ok(self.put(path).await?.json(&body))
     }
 
     /// Start a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn delete<I>(
-        &self,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn delete<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(Method::DELETE, path, api_version).await
+        self.request(Method::DELETE, path).await
     }
 }

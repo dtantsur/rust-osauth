@@ -17,8 +17,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use log::{debug, trace};
-use reqwest::header::HeaderMap;
+use log::debug;
+
 use reqwest::{Client, Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -389,14 +389,15 @@ impl Session {
     /// let maybe_version = session
     ///     .pick_api_version(osauth::services::COMPUTE, candidates)
     ///     .await?;
-    /// if let Some(version) = maybe_version {
+    ///
+    /// let request = session.get(osauth::services::COMPUTE, &["servers"]).await?;
+    /// let response = if let Some(version) = maybe_version {
     ///     println!("Using version {}", version);
+    ///     request.api_version(version)
     /// } else {
     ///     println!("Using the base version");
-    /// }
-    /// let response = session
-    ///     .get(osauth::services::COMPUTE, &["servers"], maybe_version)
-    ///     .await?;
+    ///     request
+    /// }.send().await?;
     /// # Ok(()) }
     /// # #[tokio::main]
     /// # async fn main() { example().await.unwrap(); }
@@ -458,7 +459,9 @@ impl Session {
     ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
     /// let response = session
-    ///     .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"], None)
+    ///     .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"])
+    ///     .await?
+    ///     .send()
     ///     .await?;
     /// println!("Response: {:?}", response);
     /// # Ok(()) }
@@ -473,8 +476,7 @@ impl Session {
         service: Srv,
         method: Method,
         path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    ) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -482,38 +484,21 @@ impl Session {
         I::IntoIter: Send,
     {
         let url = self.get_endpoint(service.clone(), path).await?;
-        trace!(
-            "Sending HTTP {} request to {} with API version {:?}",
-            method,
-            url,
-            api_version
-        );
-        let mut builder = self.client.request(method, url);
-        if let Some(version) = api_version {
-            let mut headers = HeaderMap::new();
-            service.set_api_version_headers(&mut headers, version)?;
-            builder = builder.headers(headers)
-        }
-        Ok(builder)
+        Ok(self.client.request_service(service.clone(), method, url))
     }
 
     /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn get<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(service, Method::GET, path, api_version).await
+        self.request(service, Method::GET, path).await
     }
 
     /// Fetch a JSON using the GET request.
@@ -533,7 +518,7 @@ impl Session {
     ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// let servers: ServersRoot = session
-    ///     .get_json(osauth::services::COMPUTE, &["servers"], None)
+    ///     .get_json(osauth::services::COMPUTE, &["servers"])
     ///     .await?;
     /// for srv in servers.servers {
     ///     println!("ID = {}, Name = {}", srv.id, srv.name);
@@ -545,12 +530,7 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get_json<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<T, Error>
+    pub async fn get_json<Srv, I, T>(&self, service: Srv, path: I) -> Result<T, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -558,7 +538,7 @@ impl Session {
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        self.request(service, Method::GET, path, api_version)
+        self.request(service, Method::GET, path)
             .await?
             .fetch_json()
             .await
@@ -568,19 +548,14 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn post<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(service, Method::POST, path, api_version).await
+        self.request(service, Method::POST, path).await
     }
 
     /// Start a POST request with a JSON body
@@ -594,8 +569,7 @@ impl Session {
         service: Srv,
         path: I,
         body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    ) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -603,45 +577,35 @@ impl Session {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        Ok(self.post(service, path, api_version).await?.json(&body))
+        Ok(self.post(service, path).await?.json(&body))
     }
 
     /// Start a PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn put<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(service, Method::PUT, path, api_version).await
+        self.request(service, Method::PUT, path).await
     }
 
     /// Issue an empty PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put_empty<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<(), Error>
+    pub async fn put_empty<Srv, I>(&self, service: Srv, path: I) -> Result<(), Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(service, Method::PUT, path, api_version)
+        self.request(service, Method::PUT, path)
             .await?
             .send()
             .await
@@ -659,8 +623,7 @@ impl Session {
         service: Srv,
         path: I,
         body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    ) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -668,27 +631,21 @@ impl Session {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        Ok(self.put(service, path, api_version).await?.json(&body))
+        Ok(self.put(service, path).await?.json(&body))
     }
 
     /// Start a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn delete<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder, Error>
+    pub async fn delete<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.request(service, Method::DELETE, path, api_version)
-            .await
+        self.request(service, Method::DELETE, path).await
     }
 
     /// Ensure service info and return the cache.

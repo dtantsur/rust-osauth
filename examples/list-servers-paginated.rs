@@ -57,7 +57,7 @@ async fn main() {
     let adapter = session.adapter(osauth::services::COMPUTE);
 
     let sstream = adapter
-        .get(&["servers"], None)
+        .get(&["servers"])
         .await
         .expect("Failed to start a GET request")
         .fetch_json_paginated::<Server>(limit, None)

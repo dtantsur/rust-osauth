@@ -22,13 +22,13 @@ async fn main() {
         .expect("Failed to create an identity provider from the environment");
 
     adapter
-        .put_empty(&["rust-osauth-test"], None)
+        .put_empty(&["rust-osauth-test"])
         .await
         .expect("Failed to create a container");
 
     println!("Writing {} to rust-osauth-test/test-object", DATA);
     adapter
-        .put_json(&["rust-osauth-test", "test-object"], DATA, None)
+        .put_json(&["rust-osauth-test", "test-object"], DATA)
         .await
         .expect("Failed to start a PUT request")
         .send()
@@ -36,7 +36,7 @@ async fn main() {
         .expect("Failed to save an object");
 
     let res: u8 = adapter
-        .get_json(&["rust-osauth-test", "test-object"], None)
+        .get_json(&["rust-osauth-test", "test-object"])
         .await
         .expect("Failed to download an object");
     println!("Received {} back", res);

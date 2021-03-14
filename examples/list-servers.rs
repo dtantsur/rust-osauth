@@ -33,7 +33,7 @@ async fn main() {
         .expect("Failed to create an identity provider from the environment");
 
     let servers: ServersRoot = session
-        .get_json(osauth::services::COMPUTE, &["servers"], None)
+        .get_json(osauth::services::COMPUTE, &["servers"])
         .await
         .expect("Failed to list servers");
     for srv in servers.servers {

@@ -325,7 +325,7 @@ impl SyncSession {
     /// let session = osauth::sync::SyncSession::from_env()
     ///     .expect("Failed to create an identity provider from the environment");
     /// session
-    ///     .request(osauth::services::COMPUTE, Method::HEAD, &["servers", "1234"], None)
+    ///     .request(osauth::services::COMPUTE, Method::HEAD, &["servers", "1234"])
     ///     .and_then(|builder| session.send_checked(builder))
     ///     .map(|response| {
     ///         println!("Response: {:?}", response);
@@ -339,34 +339,28 @@ impl SyncSession {
         service: Srv,
         method: Method,
         path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<RequestBuilder>
+    ) -> Result<RequestBuilder<Srv>>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.block_on(self.inner.request(service, method, path, api_version))
+        self.block_on(self.inner.request(service, method, path))
     }
 
     /// Issue a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response>
+    pub fn get<Srv, I>(&self, service: Srv, path: I) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.send_checked(self.request(service, Method::GET, path, api_version)?)
+        self.send_checked(self.request(service, Method::GET, path)?)
     }
 
     /// Fetch a JSON using the GET request.
@@ -384,7 +378,7 @@ impl SyncSession {
     ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// session
-    ///     .get_json(osauth::services::COMPUTE, &["servers"], None)
+    ///     .get_json(osauth::services::COMPUTE, &["servers"])
     ///     .map(|servers: ServersRoot| {
     ///         for srv in servers.servers {
     ///             println!("ID = {}, Name = {}", srv.id, srv.name);
@@ -394,12 +388,7 @@ impl SyncSession {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get_json<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<T>
+    pub fn get_json<Srv, I, T>(&self, service: Srv, path: I) -> Result<T>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -407,7 +396,7 @@ impl SyncSession {
         I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
-        self.fetch_json(self.request(service, Method::GET, path, api_version)?)
+        self.fetch_json(self.request(service, Method::GET, path)?)
     }
 
     /// Fetch a JSON using the GET request with a query.
@@ -415,13 +404,7 @@ impl SyncSession {
     /// See `reqwest` crate documentation for how to define a query.
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get_json_query<Srv, I, Q, T>(
-        &self,
-        service: Srv,
-        path: I,
-        query: Q,
-        api_version: Option<ApiVersion>,
-    ) -> Result<T>
+    pub fn get_json_query<Srv, I, Q, T>(&self, service: Srv, path: I, query: Q) -> Result<T>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -430,10 +413,7 @@ impl SyncSession {
         Q: Serialize + Send,
         T: DeserializeOwned + Send,
     {
-        self.fetch_json(
-            self.request(service, Method::GET, path, api_version)?
-                .query(&query),
-        )
+        self.fetch_json(self.request(service, Method::GET, path)?.query(&query))
     }
 
     /// Issue a GET request with a query
@@ -441,13 +421,7 @@ impl SyncSession {
     /// See `reqwest` crate documentation for how to define a query.
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn get_query<Srv, I, Q>(
-        &self,
-        service: Srv,
-        path: I,
-        query: Q,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response>
+    pub fn get_query<Srv, I, Q>(&self, service: Srv, path: I, query: Q) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -455,10 +429,7 @@ impl SyncSession {
         I::IntoIter: Send,
         Q: Serialize + Send,
     {
-        self.send_checked(
-            self.request(service, Method::GET, path, api_version)?
-                .query(&query),
-        )
+        self.send_checked(self.request(service, Method::GET, path)?.query(&query))
     }
 
     /// Download a body from a response.
@@ -470,7 +441,7 @@ impl SyncSession {
     ///     .expect("Failed to create an identity provider from the environment");
     ///
     /// session
-    ///     .get(osauth::services::OBJECT_STORAGE, &["test-container", "test-object"], None)
+    ///     .get(osauth::services::OBJECT_STORAGE, &["test-container", "test-object"])
     ///     .map(|response| {
     ///         let mut buffer = Vec::new();
     ///         session
@@ -496,13 +467,7 @@ impl SyncSession {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn post<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response>
+    pub fn post<Srv, I, T>(&self, service: Srv, path: I, body: T) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -510,10 +475,7 @@ impl SyncSession {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        self.send_checked(
-            self.request(service, Method::POST, path, api_version)?
-                .json(&body),
-        )
+        self.send_checked(self.request(service, Method::POST, path)?.json(&body))
     }
 
     /// POST a JSON object and receive a JSON back.
@@ -522,13 +484,7 @@ impl SyncSession {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn post_json<Srv, I, T, R>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<R>
+    pub fn post_json<Srv, I, T, R>(&self, service: Srv, path: I, body: T) -> Result<R>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -537,10 +493,7 @@ impl SyncSession {
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
-        self.fetch_json(
-            self.request(service, Method::POST, path, api_version)?
-                .json(&body),
-        )
+        self.fetch_json(self.request(service, Method::POST, path)?.json(&body))
     }
 
     /// PUT a JSON object.
@@ -549,13 +502,7 @@ impl SyncSession {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn put<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response>
+    pub fn put<Srv, I, T>(&self, service: Srv, path: I, body: T) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -563,29 +510,21 @@ impl SyncSession {
         I::IntoIter: Send,
         T: Serialize + Send,
     {
-        self.send_checked(
-            self.request(service, Method::PUT, path, api_version)?
-                .json(&body),
-        )
+        self.send_checked(self.request(service, Method::PUT, path)?.json(&body))
     }
 
     /// Issue an empty PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn put_empty<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response>
+    pub fn put_empty<Srv, I>(&self, service: Srv, path: I) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.send_checked(self.request(service, Method::PUT, path, api_version)?)
+        self.send_checked(self.request(service, Method::PUT, path)?)
     }
 
     /// PUT a JSON object and receive a JSON back.
@@ -594,13 +533,7 @@ impl SyncSession {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub fn put_json<Srv, I, T, R>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-        api_version: Option<ApiVersion>,
-    ) -> Result<R>
+    pub fn put_json<Srv, I, T, R>(&self, service: Srv, path: I, body: T) -> Result<R>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
@@ -609,34 +542,26 @@ impl SyncSession {
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
-        self.fetch_json(
-            self.request(service, Method::PUT, path, api_version)?
-                .json(&body),
-        )
+        self.fetch_json(self.request(service, Method::PUT, path)?.json(&body))
     }
 
     /// Issue a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub fn delete<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-        api_version: Option<ApiVersion>,
-    ) -> Result<Response>
+    pub fn delete<Srv, I>(&self, service: Srv, path: I) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator,
         I::Item: AsRef<str>,
         I::IntoIter: Send,
     {
-        self.send_checked(self.request(service, Method::DELETE, path, api_version)?)
+        self.send_checked(self.request(service, Method::DELETE, path)?)
     }
 
     /// Send the response and convert the response to a JSON.
     #[inline]
-    pub fn fetch_json<T>(&self, builder: RequestBuilder) -> Result<T>
+    pub fn fetch_json<T, Srv>(&self, builder: RequestBuilder<Srv>) -> Result<T>
     where
         T: DeserializeOwned + Send,
     {
@@ -645,7 +570,7 @@ impl SyncSession {
 
     /// Check the response and convert errors into OpenStack ones.
     #[inline]
-    pub fn send_checked(&self, builder: RequestBuilder) -> Result<Response> {
+    pub fn send_checked<Srv>(&self, builder: RequestBuilder<Srv>) -> Result<Response> {
         self.block_on(async { builder.send().await })
     }
 

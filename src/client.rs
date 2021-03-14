@@ -24,7 +24,7 @@ use futures::Stream;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::Error as HttpError;
 use log::trace;
-use reqwest::{Body, Client, Method, RequestBuilder as HttpRequestBuilder, Response, Url};
+use reqwest::{Body, Client, Method, Request, RequestBuilder as HttpRequestBuilder, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
@@ -47,7 +47,7 @@ use super::{AuthType, EndpointFilters, Error};
 /// # async fn example() -> Result<(), osauth::Error> {
 /// let session = osauth::Session::from_env().await?;
 /// let future = session
-///     .get(osauth::services::OBJECT_STORAGE, osauth::client::NO_PATH, None)
+///     .get(osauth::services::OBJECT_STORAGE, osauth::client::NO_PATH)
 ///     .await?;
 /// # Ok(()) }
 /// # #[tokio::main]
@@ -88,6 +88,16 @@ impl AuthenticatedClient {
     #[inline]
     pub fn auth_type(&self) -> &dyn AuthType {
         self.auth.as_ref()
+    }
+
+    /// Authenticate a request.
+    #[inline]
+    async fn authenticate(&self, request: HttpRequestBuilder) -> Result<Request, Error> {
+        self.auth
+            .authenticate(&self.client, request)
+            .await?
+            .build()
+            .map_err(Error::from)
     }
 
     /// Get a URL for the requested service.
@@ -306,12 +316,9 @@ impl<S> RequestBuilder<S> {
 
     /// Send the request without checking for HTTP and OpenStack errors.
     pub async fn send_unchecked(self) -> Result<Response, Error> {
-        let rb = self
-            .client
-            .auth
-            .authenticate(&self.client.client, self.inner)
-            .await?;
-        rb.send().await.map_err(Error::from)
+        let req = self.client.authenticate(self.inner).await?;
+        trace!("Sending HTTP {} request to {}", req.method(), req.url());
+        self.client.client.execute(req).await.map_err(Error::from)
     }
 }
 
@@ -321,8 +328,9 @@ where
 {
     /// Add an API version to this request.
     pub fn api_version<A: Into<ApiVersion>>(self, version: A) -> RequestBuilder<S> {
+        let (name, value) = self.service.get_version_header(version.into());
         RequestBuilder {
-            inner: self.service.add_version_header(self.inner, version.into()),
+            inner: self.inner.header(name, value),
             ..self
         }
     }
@@ -377,11 +385,7 @@ where
     /// let session = osauth::Session::from_env().await?;
     ///
     /// let servers = session
-    ///     .get(
-    ///         osauth::services::COMPUTE,
-    ///         &["servers"],
-    ///         None,
-    ///     )
+    ///     .get(osauth::services::COMPUTE, &["servers"])
     ///     .await?
     ///     .fetch_json_paginated::<Server>(None, None)
     ///     .await;

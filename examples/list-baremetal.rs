@@ -35,11 +35,11 @@ async fn main() {
         .expect("Failed to create an identity provider from the environment");
 
     let nodes: NodesRoot = session
-        .get_json(
-            osauth::services::BAREMETAL,
-            &["nodes"],
-            Some(osauth::ApiVersion(1, 5)),
-        )
+        .get(osauth::services::BAREMETAL, &["nodes"])
+        .await
+        .expect("Failed to start a GET request")
+        .api_version((1, 5))
+        .fetch_json()
         .await
         .expect("Failed to list nodes");
     for node in nodes.nodes {

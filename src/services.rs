@@ -14,9 +14,9 @@
 
 //! OpenStack service types.
 
-use reqwest::{header::HeaderMap, RequestBuilder};
+use http::{header::HeaderName, HeaderValue};
 
-use super::{ApiVersion, Error, ErrorKind};
+use super::ApiVersion;
 
 /// Trait representing a service type.
 pub trait ServiceType {
@@ -28,34 +28,16 @@ pub trait ServiceType {
         true
     }
 
-    /// Update the headers to include the API version headers.
-    ///
-    /// The default implementation fails with `IncompatibleApiVersion`.
-    fn set_api_version_headers(
-        &self,
-        _headers: &mut HeaderMap,
-        _version: ApiVersion,
-    ) -> Result<(), Error> {
-        Err(Error::new(
-            ErrorKind::IncompatibleApiVersion,
-            format!(
-                "The {} service does not support API versions",
-                self.catalog_type()
-            ),
-        ))
-    }
-
     /// Whether this service supports version discovery at all.
     fn version_discovery_supported(&self) -> bool {
         true
     }
 }
 
-// TODO(dtantsur): remove set_api_version_headers
 /// Trait marking a service as supporting API versions.
 pub trait VersionedService: ServiceType {
-    /// Add a version header to this request builder.
-    fn add_version_header(&self, request: RequestBuilder, version: ApiVersion) -> RequestBuilder;
+    /// Get a header for this version.
+    fn get_version_header(&self, version: ApiVersion) -> (HeaderName, HeaderValue);
 }
 
 /// A major version selector.
@@ -127,24 +109,14 @@ macro_rules! service {
             fn catalog_type(&self) -> &'static str {
                 $name
             }
-
-            fn set_api_version_headers(
-                &self,
-                headers: &mut HeaderMap,
-                version: ApiVersion,
-            ) -> Result<(), Error> {
-                let _ = headers.insert($hdr, version.into());
-                Ok(())
-            }
         }
 
         impl $crate::services::VersionedService for $cls {
-            fn add_version_header(
+            fn get_version_header(
                 &self,
-                request: ::reqwest::RequestBuilder,
                 version: ApiVersion,
-            ) -> ::reqwest::RequestBuilder {
-                request.header($hdr, version)
+            ) -> (::http::header::HeaderName, ::http::HeaderValue) {
+                (::http::header::HeaderName::from_static($hdr), version.into())
             }
         }
 
@@ -230,22 +202,15 @@ impl ServiceType for ComputeService {
     fn major_version_supported(&self, version: ApiVersion) -> bool {
         version.0 == 2
     }
-
-    fn set_api_version_headers(
-        &self,
-        headers: &mut HeaderMap,
-        version: ApiVersion,
-    ) -> Result<(), Error> {
-        // TODO: new-style header support
-        let _ = headers.insert("x-openstack-nova-api-version", version.into());
-        Ok(())
-    }
 }
 
 impl VersionedService for ComputeService {
-    fn add_version_header(&self, request: RequestBuilder, version: ApiVersion) -> RequestBuilder {
+    fn get_version_header(&self, version: ApiVersion) -> (HeaderName, HeaderValue) {
         // TODO: new-style header support
-        request.header("x-openstack-nova-api-version", version)
+        (
+            HeaderName::from_static("x-openstack-nova-api-version"),
+            version.into(),
+        )
     }
 }
 
