@@ -17,22 +17,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use log::debug;
-
 use reqwest::{Client, Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use static_assertions::assert_impl_all;
-use tokio::sync::RwLock;
 
+use super::cache::EndpointCache;
 use super::client::{AuthenticatedClient, RequestBuilder};
 use super::loading::CloudConfig;
 use super::protocol::ServiceInfo;
 use super::services::ServiceType;
 use super::url;
 use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
-
-type Cache = HashMap<&'static str, ServiceInfo>;
 
 /// An OpenStack API session.
 ///
@@ -46,9 +42,7 @@ type Cache = HashMap<&'static str, ServiceInfo>;
 #[derive(Debug, Clone)]
 pub struct Session {
     client: AuthenticatedClient,
-    cached_info: Arc<RwLock<Cache>>,
-    endpoint_filters: EndpointFilters,
-    endpoint_overrides: HashMap<String, Url>,
+    endpoint_cache: Arc<EndpointCache>,
 }
 
 assert_impl_all!(Session: Sync, Send);
@@ -65,9 +59,7 @@ impl Session {
     pub fn new_with_authenticated_client(client: AuthenticatedClient) -> Session {
         Session {
             client,
-            cached_info: Arc::new(RwLock::new(HashMap::new())),
-            endpoint_filters: EndpointFilters::default(),
-            endpoint_overrides: HashMap::new(),
+            endpoint_cache: Arc::new(EndpointCache::new()),
         }
     }
 
@@ -186,7 +178,7 @@ impl Session {
     /// Endpoint filters in use.
     #[inline]
     pub fn endpoint_filters(&self) -> &EndpointFilters {
-        &self.endpoint_filters
+        &self.endpoint_cache.filters
     }
 
     /// Modify endpoint filters.
@@ -194,14 +186,13 @@ impl Session {
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
     pub fn endpoint_filters_mut(&mut self) -> &mut EndpointFilters {
-        self.reset_cache();
-        &mut self.endpoint_filters
+        &mut Arc::make_mut(&mut self.endpoint_cache).clear().filters
     }
 
     /// Endpoint overrides in use.
     #[inline]
     pub fn endpoint_overrides(&self) -> &HashMap<String, Url> {
-        &self.endpoint_overrides
+        &self.endpoint_cache.overrides
     }
 
     /// Modify endpoint overrides.
@@ -209,8 +200,7 @@ impl Session {
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
     pub fn endpoint_overrides_mut(&mut self) -> &mut HashMap<String, Url> {
-        self.reset_cache();
-        &mut self.endpoint_overrides
+        &mut Arc::make_mut(&mut self.endpoint_cache).clear().overrides
     }
 
     /// Update the authentication and purges cached endpoint information.
@@ -225,10 +215,10 @@ impl Session {
         self.client.refresh().await
     }
 
-    /// Reset the internal cache.
+    /// Reset the internal cache of this instance.
     #[inline]
     fn reset_cache(&mut self) {
-        self.cached_info = Arc::new(RwLock::new(HashMap::new()));
+        let _ = Arc::make_mut(&mut self.endpoint_cache).clear();
     }
 
     /// Set a new authentication for this `Session`.
@@ -245,9 +235,10 @@ impl Session {
     ///
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
+    #[inline]
     pub fn set_endpoint_interface(&mut self, endpoint_interface: InterfaceType) {
-        self.reset_cache();
-        self.endpoint_filters.set_interfaces(endpoint_interface);
+        self.endpoint_filters_mut()
+            .set_interfaces(endpoint_interface);
     }
 
     /// A convenience call to set an endpoint override for one service.
@@ -255,9 +246,8 @@ impl Session {
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
     pub fn set_endpoint_override<Svc: ServiceType>(&mut self, service: Svc, url: Url) {
-        self.reset_cache();
         let _ = self
-            .endpoint_overrides
+            .endpoint_overrides_mut()
             .insert(service.catalog_type().to_string(), url);
     }
 
@@ -266,8 +256,7 @@ impl Session {
     /// This call clears the cached service information for this `Session`.
     /// It does not, however, affect clones of this `Session`.
     pub fn set_region<T: Into<String>>(&mut self, region: T) {
-        self.reset_cache();
-        self.endpoint_filters.region = Some(region.into());
+        self.endpoint_filters_mut().region = Some(region.into());
     }
 
     /// Convert this session into one using the given authentication.
@@ -655,35 +644,9 @@ impl Session {
         F: FnOnce(&ServiceInfo) -> T + Send,
         T: Send,
     {
-        let catalog_type = service.catalog_type();
-        if let Some(info) = self.cached_info.read().await.get(catalog_type) {
-            return Ok(filter(info));
-        }
-
-        debug!(
-            "No cached information for service {}, fetching",
-            catalog_type
-        );
-
-        let mut lock = self.cached_info.write().await;
-        // Additonal check in case another thread has updated the token while we were waiting for
-        // the write lock.
-        Ok(if let Some(info) = lock.get(catalog_type) {
-            filter(info)
-        } else {
-            let ep = match self.endpoint_overrides.get(catalog_type) {
-                Some(found) => found.clone(),
-                None => {
-                    self.client
-                        .get_endpoint(catalog_type.to_string(), self.endpoint_filters.clone())
-                        .await?
-                }
-            };
-            let info = ServiceInfo::fetch(service, ep, &self.client).await?;
-            let value = filter(&info);
-            let _ = lock.insert(catalog_type, info);
-            value
-        })
+        self.endpoint_cache
+            .extract_service_info(&self.client, service, filter)
+            .await
     }
 
     #[cfg(test)]
@@ -692,9 +655,7 @@ impl Session {
         service_type: &'static str,
         service_info: ServiceInfo,
     ) {
-        let mut hm = HashMap::new();
-        let _ = hm.insert(service_type, service_info);
-        self.cached_info = Arc::new(RwLock::new(hm));
+        self.endpoint_cache = Arc::new(EndpointCache::new_with(service_type, service_info));
     }
 }
 

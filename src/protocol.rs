@@ -114,6 +114,7 @@ impl Root {
 
 /// Information about API endpoint.
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq, Clone))]
 pub struct ServiceInfo {
     /// Root endpoint.
     pub root_url: Url,

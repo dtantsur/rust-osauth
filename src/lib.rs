@@ -110,6 +110,7 @@ mod adapter;
 mod apiversion;
 mod auth;
 mod basic;
+mod cache;
 mod catalog;
 pub mod client;
 pub mod common;

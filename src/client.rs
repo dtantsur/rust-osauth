@@ -160,6 +160,14 @@ impl AuthenticatedClient {
             service,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) async fn new_noauth(endpoint: &str) -> AuthenticatedClient {
+        use crate::NoAuth;
+        AuthenticatedClient::new(Client::new(), NoAuth::new(endpoint).unwrap())
+            .await
+            .unwrap()
+    }
 }
 
 impl From<AuthenticatedClient> for Client {
