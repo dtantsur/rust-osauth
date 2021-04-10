@@ -102,12 +102,14 @@ impl AuthenticatedClient {
 
     /// Get a URL for the requested service.
     #[inline]
-    pub fn get_endpoint(
+    pub async fn get_endpoint(
         &self,
-        service_type: &str,
-        filters: &EndpointFilters,
+        service_type: String,
+        filters: EndpointFilters,
     ) -> Result<Url, Error> {
-        self.auth.get_endpoint(service_type, filters)
+        self.auth
+            .get_endpoint(&self.client, service_type, filters)
+            .await
     }
 
     /// Get a reference to the inner (non-authenticated) client.

@@ -71,7 +71,12 @@ impl AuthType for BasicAuth {
     }
 
     /// Get a predefined endpoint for all service types
-    fn get_endpoint(&self, _service_type: &str, _filters: &EndpointFilters) -> Result<Url, Error> {
+    async fn get_endpoint(
+        &self,
+        _client: &Client,
+        _service_type: String,
+        _filters: EndpointFilters,
+    ) -> Result<Url, Error> {
         Ok(self.endpoint.clone())
     }
 

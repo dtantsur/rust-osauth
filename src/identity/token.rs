@@ -49,7 +49,7 @@ use crate::{AuthType, EndpointFilters, Error};
 /// The authentication token is cached while it's still valid or until
 /// [refresh](../trait.AuthType.html#tymethod.refresh) is called.
 /// Clones of a `Token` also start with an empty cache.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     inner: Internal,
 }
@@ -132,8 +132,13 @@ impl AuthType for Token {
     }
 
     /// Get a URL for the requested service.
-    fn get_endpoint(&self, service_type: &str, filters: &EndpointFilters) -> Result<Url, Error> {
-        self.inner.get_endpoint(service_type, filters)
+    async fn get_endpoint(
+        &self,
+        client: &Client,
+        service_type: String,
+        filters: EndpointFilters,
+    ) -> Result<Url, Error> {
+        self.inner.get_endpoint(client, service_type, filters).await
     }
 
     /// Refresh the cached token and service catalog.

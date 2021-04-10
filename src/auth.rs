@@ -39,12 +39,13 @@ pub trait AuthType: Debug + Sync + Send {
         request: RequestBuilder,
     ) -> Result<RequestBuilder, Error>;
 
-    /// Get a URL for the requested service.
-    ///
-    /// When a service catalog is used, the URL is returned from cache, which means that `refresh`
-    /// *must* be called at least once before `get_endpoint`. Implementations may panic or return an
-    /// error if this condition is not met.
-    fn get_endpoint(&self, service_type: &str, filters: &EndpointFilters) -> Result<Url, Error>;
+    /// Get a URL for the requested service using the provided client (if needed).
+    async fn get_endpoint(
+        &self,
+        client: &Client,
+        service_type: String,
+        filters: EndpointFilters,
+    ) -> Result<Url, Error>;
 
     /// Refresh the authentication (renew the token, etc).
     async fn refresh(&self, client: &Client) -> Result<(), Error>;
@@ -105,7 +106,12 @@ impl AuthType for NoAuth {
     }
 
     /// Get a predefined endpoint for all service types
-    fn get_endpoint(&self, service_type: &str, _filters: &EndpointFilters) -> Result<Url, Error> {
+    async fn get_endpoint(
+        &self,
+        _client: &Client,
+        service_type: String,
+        _filters: EndpointFilters,
+    ) -> Result<Url, Error> {
         self.endpoint.clone().ok_or_else(|| {
             Error::new(
                 ErrorKind::EndpointNotFound,
@@ -125,6 +131,8 @@ impl AuthType for NoAuth {
 
 #[cfg(test)]
 pub mod test {
+    use reqwest::Client;
+
     use super::{AuthType, NoAuth};
 
     #[test]
@@ -145,7 +153,10 @@ pub mod test {
     #[tokio::test]
     async fn test_noauth_get_endpoint() {
         let a = NoAuth::new("http://127.0.0.1:8080/v1").unwrap();
-        let e = a.get_endpoint("foobar", &Default::default()).unwrap();
+        let e = a
+            .get_endpoint(&Client::new(), String::from("foobar"), Default::default())
+            .await
+            .unwrap();
         assert_eq!(e.scheme(), "http");
         assert_eq!(e.host_str().unwrap(), "127.0.0.1");
         assert_eq!(e.port().unwrap(), 8080u16);

@@ -33,10 +33,6 @@ impl ServiceCatalog {
         ServiceCatalog { inner: catalog }
     }
 
-    pub(crate) fn empty() -> ServiceCatalog {
-        ServiceCatalog { inner: Vec::new() }
-    }
-
     /// Find an endpoint in the catalog.
     pub fn find_endpoint(
         &self,
