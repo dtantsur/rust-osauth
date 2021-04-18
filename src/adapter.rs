@@ -17,7 +17,6 @@
 use http::{header::HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 
 use super::services::{ServiceType, VersionedService};
 use super::session::ServiceRequestBuilder;
@@ -165,7 +164,7 @@ impl<Srv> Adapter<Srv> {
 
 impl<Srv> Adapter<Srv>
 where
-    Srv: VersionedService,
+    Srv: VersionedService + Send,
 {
     /// Default API version used when no version is specified.
     #[inline]
@@ -254,7 +253,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///     .pick_api_version(candidates)
     ///     .await?;
     ///
-    /// let request = adapter.get(&["servers"]).await?;
+    /// let request = adapter.get(&["servers"]);
     /// let response = if let Some(version) = maybe_version {
     ///     println!("Using version {}", version);
     ///     request.api_version(version)
@@ -297,7 +296,6 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///     .expect("Failed to create an identity provider from the environment");
     /// let response = adapter
     ///     .request(reqwest::Method::HEAD, &["servers", "1234"])
-    ///     .await?
     ///     .send()
     ///     .await?;
     /// println!("Response: {:?}", response);
@@ -308,39 +306,30 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// This is the most generic call to make a request. You may prefer to use more specific `get`,
     /// `post`, `put` or `delete` calls instead.
-    pub async fn request<I>(
-        &self,
-        method: Method,
-        path: I,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn request<I>(&self, method: Method, path: I) -> ServiceRequestBuilder<Srv>
     where
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        let rb = self
-            .inner
-            .request(self.service.clone(), method, path)
-            .await?;
+        let rb = self.inner.request(self.service.clone(), method, path);
 
-        Ok(
-            if let Some((name, value)) = self.api_version_header.clone() {
-                rb.header(name, value)
-            } else {
-                rb
-            },
-        )
+        if let Some((name, value)) = self.api_version_header.clone() {
+            rb.header(name, value)
+        } else {
+            rb
+        }
     }
 
     /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn get<I>(&self, path: I) -> ServiceRequestBuilder<Srv>
     where
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.request(Method::GET, path).await
+        self.request(Method::GET, path)
     }
 
     /// Fetch a JSON using the GET request.
@@ -378,103 +367,46 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn get_json<I, T>(&self, path: I) -> Result<T, Error>
     where
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
         T: DeserializeOwned + Send,
     {
-        self.request(Method::GET, path)
-            .await?
-            .fetch_json::<T>()
-            .await
+        self.request(Method::GET, path).fetch_json::<T>().await
     }
 
     /// Start a POST request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn post<I>(&self, path: I) -> ServiceRequestBuilder<Srv>
     where
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.request(Method::POST, path).await
-    }
-
-    /// POST a JSON object.
-    ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
-    #[inline]
-    pub async fn post_json<I, T>(
-        &self,
-        path: I,
-        body: T,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
-    where
-        I: IntoIterator + Send,
-        I::Item: AsRef<str>,
-        T: Serialize + Send,
-    {
-        Ok(self.post(path).await?.json(&body))
+        self.request(Method::POST, path)
     }
 
     /// Start a PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn put<I>(&self, path: I) -> ServiceRequestBuilder<Srv>
     where
-        I: IntoIterator + Send,
-        I::Item: AsRef<str>,
-    {
-        self.request(Method::PUT, path).await
-    }
-
-    /// Issue an empty PUT request.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub async fn put_empty<I>(&self, path: I) -> Result<(), Error>
-    where
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
         self.request(Method::PUT, path)
-            .await?
-            .send()
-            .await
-            .map(|_| ())
-    }
-
-    /// PUT a JSON object.
-    ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
-    #[inline]
-    pub async fn put_json<I, T>(
-        &self,
-        path: I,
-        body: T,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
-    where
-        I: IntoIterator + Send,
-        I::Item: AsRef<str>,
-        T: Serialize + Send,
-    {
-        Ok(self.put(path).await?.json(&body))
     }
 
     /// Start a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn delete<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn delete<I>(&self, path: I) -> ServiceRequestBuilder<Srv>
     where
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.request(Method::DELETE, path).await
+        self.request(Method::DELETE, path)
     }
 }

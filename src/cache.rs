@@ -20,9 +20,9 @@ use log::debug;
 use reqwest::Url;
 use tokio::sync::RwLock;
 
-use crate::client::AuthenticatedClient;
 use crate::protocol::ServiceInfo;
 use crate::services::ServiceType;
+use crate::{client::AuthenticatedClient, ErrorKind};
 use crate::{EndpointFilters, Error};
 
 /// Service information cache.
@@ -105,6 +105,12 @@ impl EndpointCache {
                 Some(found) => found.clone(),
                 None => client.get_endpoint(catalog_type, &self.filters).await?,
             };
+            if ep.cannot_be_a_base() || !ep.has_host() {
+                return Err(Error::new(
+                    ErrorKind::InvalidResponse,
+                    format!("Invalid URL {} received for service {}", ep, catalog_type),
+                ));
+            }
             let info = ServiceInfo::fetch(service, ep, client).await?;
             let value = filter(&info);
             let _ = lock.insert(catalog_type, info);
@@ -120,6 +126,7 @@ mod test {
     use crate::client::AuthenticatedClient;
     use crate::protocol::ServiceInfo;
     use crate::services::COMPUTE;
+    use crate::ErrorKind;
 
     use super::EndpointCache;
 
@@ -141,5 +148,17 @@ mod test {
             .await
             .unwrap();
         assert_eq!(sinfo, sinfo2);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_url() {
+        let client = AuthenticatedClient::new_noauth("unix:/run/foo.socket").await;
+        let cache = EndpointCache::new();
+        let err = cache
+            .extract_service_info(&client, COMPUTE, |s| s.clone())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.kind(), ErrorKind::InvalidResponse);
     }
 }

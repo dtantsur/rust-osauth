@@ -35,6 +35,7 @@ use static_assertions::assert_eq_size;
 pub use super::stream::PaginatedResource;
 #[cfg(feature = "stream")]
 use super::stream::{paginated, FetchNext};
+use super::url as url_utils;
 use super::{AuthType, EndpointFilters, Error};
 
 /// A properly typed constant for use with root paths.
@@ -46,8 +47,9 @@ use super::{AuthType, EndpointFilters, Error};
 /// ```rust,no_run
 /// # async fn example() -> Result<(), osauth::Error> {
 /// let session = osauth::Session::from_env().await?;
-/// let future = session
+/// let response = session
 ///     .get(osauth::services::OBJECT_STORAGE, osauth::client::NO_PATH)
+///     .send()
 ///     .await?;
 /// # Ok(()) }
 /// # #[tokio::main]
@@ -243,6 +245,12 @@ pub async fn check(response: Response) -> Result<Response, Error> {
 }
 
 impl RequestBuilder {
+    /// Get a reference to the client.
+    #[inline]
+    pub fn client(&self) -> &AuthenticatedClient {
+        &self.client
+    }
+
     /// Add a body to the request.
     pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder {
         RequestBuilder {
@@ -317,6 +325,14 @@ impl RequestBuilder {
         self.client.client.execute(req).await.map_err(Error::from)
     }
 
+    /// Send the request to the given URL.
+    pub(crate) async fn send_unchecked_to(self, url: &Url) -> Result<Response, Error> {
+        let mut req = self.client.authenticate(self.inner).await?;
+        url_utils::merge(req.url_mut(), url);
+        trace!("Sending HTTP {} request to {}", req.method(), req.url());
+        self.client.client.execute(req).await.map_err(Error::from)
+    }
+
     #[cfg(test)]
     pub(crate) fn build(self) -> Result<Request, Error> {
         self.inner.build().map_err(From::from)
@@ -363,7 +379,6 @@ impl RequestBuilder {
     ///
     /// let servers = session
     ///     .get(osauth::services::COMPUTE, &["servers"])
-    ///     .await?
     ///     .fetch_json_paginated::<Server>(None, None)
     ///     .await;
     ///

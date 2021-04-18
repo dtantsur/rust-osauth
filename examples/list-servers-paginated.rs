@@ -58,8 +58,6 @@ async fn main() {
 
     let sstream = adapter
         .get(&["servers"])
-        .await
-        .expect("Failed to start a GET request")
         .fetch_json_paginated::<Server>(limit, None)
         .await;
     pin_mut!(sstream);

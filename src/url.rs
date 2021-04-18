@@ -47,6 +47,21 @@ pub fn pop(mut url: Url) -> Url {
     url
 }
 
+/// Merges host, port, path and scheme from the source URL.
+pub fn merge(dest: &mut Url, src: &Url) {
+    // This function is called on URLs verified in EndpointCache, so unwraps are okay.
+    dest.set_scheme(src.scheme()).unwrap();
+    dest.set_host(src.host_str()).unwrap();
+    dest.set_port(src.port()).unwrap();
+    let existing: Vec<String> = dest.path_segments().unwrap().map(str::to_string).collect();
+    dest.path_segments_mut()
+        .unwrap()
+        .clear()
+        .extend(src.path_segments().unwrap())
+        .pop_if_empty()
+        .extend(existing);
+}
+
 #[cfg(test)]
 mod test {
     use reqwest::Url;
@@ -84,6 +99,65 @@ mod test {
         assert_eq!(
             pop(Url::parse("https://example.com/v1/foobar/").unwrap()).as_str(),
             "https://example.com/v1/"
+        );
+    }
+
+    #[test]
+    fn test_merge_host_only() {
+        let mut dest = Url::parse("http://compute").unwrap();
+        let src = Url::parse("https://example.com").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(dest.as_str(), "https://example.com/");
+    }
+
+    #[test]
+    fn test_merge_with_port() {
+        let mut dest = Url::parse("http://compute").unwrap();
+        let src = Url::parse("https://example.com:5050").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(dest.as_str(), "https://example.com:5050/");
+    }
+
+    #[test]
+    fn test_merge_existing_path() {
+        let mut dest = Url::parse("http://compute/path/1").unwrap();
+        let src = Url::parse("https://example.com").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(dest.as_str(), "https://example.com/path/1");
+    }
+
+    #[test]
+    fn test_merge_new_path() {
+        let mut dest = Url::parse("http://compute").unwrap();
+        let src = Url::parse("https://example.com/compute").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(dest.as_str(), "https://example.com/compute/");
+    }
+
+    #[test]
+    fn test_merge_combine_args() {
+        let mut dest = Url::parse("http://compute/?answer=42").unwrap();
+        let src = Url::parse("https://example.com").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(dest.as_str(), "https://example.com/?answer=42");
+    }
+
+    #[test]
+    fn test_merge_combine_path() {
+        let mut dest = Url::parse("http://compute/path/1").unwrap();
+        let src = Url::parse("https://example.com/compute").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(dest.as_str(), "https://example.com/compute/path/1");
+    }
+
+    #[test]
+    fn test_merge_combine_everything() {
+        let mut dest = Url::parse("http://compute/path/1/?foo=bar,answer=42").unwrap();
+        let src = Url::parse("https://example.com:5050/compute/").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(
+            dest.as_str(),
+            "https://example.com:5050/compute/path/1/?foo=bar,answer=42"
         );
     }
 }

@@ -30,10 +30,11 @@ use serde::Serialize;
 use static_assertions::assert_impl_all;
 
 use super::cache::EndpointCache;
-use super::client::{AuthenticatedClient, RequestBuilder};
+use super::client::{self, AuthenticatedClient, RequestBuilder, NO_PATH};
 use super::loading::CloudConfig;
 use super::protocol::ServiceInfo;
 use super::services::{ServiceType, VersionedService};
+use super::url as url_utils;
 use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
 
 #[cfg(feature = "stream")]
@@ -379,7 +380,7 @@ impl Session {
     ///     .pick_api_version(osauth::services::COMPUTE, candidates)
     ///     .await?;
     ///
-    /// let request = session.get(osauth::services::COMPUTE, &["servers"]).await?;
+    /// let request = session.get(osauth::services::COMPUTE, &["servers"]);
     /// let response = if let Some(version) = maybe_version {
     ///     println!("Using version {}", version);
     ///     request.api_version(version)
@@ -440,7 +441,6 @@ impl Session {
     ///     .expect("Failed to create an identity provider from the environment");
     /// let response = session
     ///     .request(osauth::services::COMPUTE, reqwest::Method::HEAD, &["servers", "1234"])
-    ///     .await?
     ///     .send()
     ///     .await?;
     /// println!("Response: {:?}", response);
@@ -451,39 +451,41 @@ impl Session {
     ///
     /// This is the most generic call to make a request. You may prefer to use more specific `get`,
     /// `post`, `put` or `delete` calls instead.
-    pub async fn request<Srv, I>(
+    pub fn request<Srv, I>(
         &self,
         service: Srv,
         method: Method,
         path: I,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
+    ) -> ServiceRequestBuilder<Srv>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        let url = self.get_endpoint(service.clone(), path).await?;
-        Ok(ServiceRequestBuilder {
-            inner: self.client.request(method, url),
+        // NOTE(dtantsur): What is going on here? Since we don't know the URL upfront,
+        // we build a fake URL. The real URL is fetched in ServiceRequestBuilder::send_unchecked,
+        // and the host, port and scheme are replaced. Anyone who invents a better procedure
+        // gets a drink from me at the nearest occasion.
+        let url_with_path = url_utils::extend(FAKE_URL.clone(), path.into_iter());
+
+        ServiceRequestBuilder {
+            inner: self.client.request(method, url_with_path),
+            endpoint_cache: self.endpoint_cache.clone(),
             service: service.clone(),
-        })
+        }
     }
 
     /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn get<Srv, I>(&self, service: Srv, path: I) -> ServiceRequestBuilder<Srv>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.request(service, Method::GET, path).await
+        self.request(service, Method::GET, path)
     }
 
     /// Fetch a JSON using the GET request.
@@ -518,124 +520,50 @@ impl Session {
     pub async fn get_json<Srv, I, T>(&self, service: Srv, path: I) -> Result<T, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
         T: DeserializeOwned + Send,
     {
-        self.request(service, Method::GET, path)
-            .await?
-            .fetch_json()
-            .await
+        self.request(service, Method::GET, path).fetch_json().await
     }
 
     /// Start a POST request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn post<Srv, I>(&self, service: Srv, path: I) -> ServiceRequestBuilder<Srv>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.request(service, Method::POST, path).await
-    }
-
-    /// Start a POST request with a JSON body
-    ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub async fn post_json<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
-        I::Item: AsRef<str>,
-        T: Serialize + Send,
-    {
-        Ok(self.post(service, path).await?.json(&body))
+        self.request(service, Method::POST, path)
     }
 
     /// Start a PUT request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn put<Srv, I>(&self, service: Srv, path: I) -> ServiceRequestBuilder<Srv>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
-        I::Item: AsRef<str>,
-    {
-        self.request(service, Method::PUT, path).await
-    }
-
-    /// Issue an empty PUT request.
-    ///
-    /// See [request](#method.request) for an explanation of the parameters.
-    #[inline]
-    pub async fn put_empty<Srv, I>(&self, service: Srv, path: I) -> Result<(), Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
         self.request(service, Method::PUT, path)
-            .await?
-            .send()
-            .await
-            .map(|_| ())
-    }
-
-    /// Start a PUT request with a JSON body.
-    ///
-    /// The `body` argument is anything that can be serialized into JSON.
-    ///
-    /// See [request](#method.request) for an explanation of the other parameters.
-    #[inline]
-    pub async fn put_json<Srv, I, T>(
-        &self,
-        service: Srv,
-        path: I,
-        body: T,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
-    where
-        Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
-        I::Item: AsRef<str>,
-        T: Serialize + Send,
-    {
-        Ok(self.put(service, path).await?.json(&body))
     }
 
     /// Start a DELETE request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn delete<Srv, I>(
-        &self,
-        service: Srv,
-        path: I,
-    ) -> Result<ServiceRequestBuilder<Srv>, Error>
+    pub fn delete<Srv, I>(&self, service: Srv, path: I) -> ServiceRequestBuilder<Srv>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator + Send,
+        I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.request(service, Method::DELETE, path).await
+        self.request(service, Method::DELETE, path)
     }
 
     /// Ensure service info and return the cache.
@@ -665,13 +593,24 @@ impl Session {
 #[must_use = "preparing a request is not enough to run it"]
 pub struct ServiceRequestBuilder<S: ServiceType> {
     inner: RequestBuilder,
+    endpoint_cache: Arc<EndpointCache>,
     service: S,
+}
+
+lazy_static::lazy_static! {
+    static ref FAKE_URL: Url = Url::parse("http://openstack").expect("fake URL must parse");
 }
 
 impl<S> ServiceRequestBuilder<S>
 where
     S: ServiceType,
 {
+    /// Get a reference to the client.
+    #[inline]
+    pub fn client(&self) -> &AuthenticatedClient {
+        self.inner.client()
+    }
+
     /// Add a body to the request.
     pub fn body<T: Into<Body>>(self, body: T) -> ServiceRequestBuilder<S> {
         ServiceRequestBuilder {
@@ -730,18 +669,31 @@ where
     pub async fn fetch_json<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned + Send,
+        S: Send,
     {
         self.send().await?.json::<T>().await.map_err(Error::from)
     }
 
     /// Send the request and check for errors.
-    pub async fn send(self) -> Result<Response, Error> {
-        self.inner.send().await
+    pub async fn send(self) -> Result<Response, Error>
+    where
+        S: Send,
+    {
+        client::check(self.send_unchecked().await?).await
     }
 
     /// Send the request without checking for HTTP and OpenStack errors.
-    pub async fn send_unchecked(self) -> Result<Response, Error> {
-        self.inner.send_unchecked().await
+    pub async fn send_unchecked(self) -> Result<Response, Error>
+    where
+        S: Send,
+    {
+        let url = self
+            .endpoint_cache
+            .extract_service_info(self.inner.client(), self.service, |info| {
+                info.get_endpoint(NO_PATH)
+            })
+            .await?;
+        self.inner.send_unchecked_to(&url).await
     }
 }
 
@@ -809,7 +761,6 @@ where
     ///
     /// let servers = session
     ///     .get(osauth::services::COMPUTE, &["servers"])
-    ///     .await?
     ///     .fetch_json_paginated::<Server>(None, None)
     ///     .await;
     ///
@@ -843,6 +794,7 @@ where
     pub fn try_clone(&self) -> Option<ServiceRequestBuilder<S>> {
         self.inner.try_clone().map(|inner| ServiceRequestBuilder {
             inner,
+            endpoint_cache: self.endpoint_cache.clone(),
             service: self.service.clone(),
         })
     }
@@ -1015,9 +967,12 @@ pub(crate) mod test_session {
 
 #[cfg(test)]
 mod test_request_builder {
+    use std::sync::Arc;
+
     use http::Method;
     use reqwest::{Client, Url};
 
+    use crate::cache::EndpointCache;
     use crate::client::AuthenticatedClient;
     use crate::{services, NoAuth};
 
@@ -1030,6 +985,7 @@ mod test_request_builder {
             .unwrap();
         let rb = ServiceRequestBuilder {
             inner: cli.request(Method::GET, Url::parse("http://127.0.0.1").unwrap()),
+            endpoint_cache: Arc::new(EndpointCache::new()),
             service: services::BAREMETAL,
         }
         .api_version((1, 42));
@@ -1045,6 +1001,7 @@ mod test_request_builder {
             .unwrap();
         let mut rb = ServiceRequestBuilder {
             inner: cli.request(Method::GET, Url::parse("http://127.0.0.1").unwrap()),
+            endpoint_cache: Arc::new(EndpointCache::new()),
             service: services::BAREMETAL,
         };
         rb.set_api_version((1, 42));

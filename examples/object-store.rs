@@ -21,16 +21,16 @@ async fn main() {
         .await
         .expect("Failed to create an identity provider from the environment");
 
-    adapter
-        .put_empty(&["rust-osauth-test"])
+    let _ = adapter
+        .put(&["rust-osauth-test"])
+        .send()
         .await
         .expect("Failed to create a container");
 
     println!("Writing {} to rust-osauth-test/test-object", DATA);
     adapter
-        .put_json(&["rust-osauth-test", "test-object"], DATA)
-        .await
-        .expect("Failed to start a PUT request")
+        .put(&["rust-osauth-test", "test-object"])
+        .json(&DATA)
         .send()
         .await
         .expect("Failed to save an object");
