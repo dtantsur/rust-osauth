@@ -563,13 +563,17 @@ impl SyncSession {
     pub fn fetch_json<T, Srv>(&self, builder: RequestBuilder<Srv>) -> Result<T>
     where
         T: DeserializeOwned + Send,
+        Srv: ServiceType,
     {
         self.block_on(async { builder.fetch_json().await })
     }
 
     /// Check the response and convert errors into OpenStack ones.
     #[inline]
-    pub fn send_checked<Srv>(&self, builder: RequestBuilder<Srv>) -> Result<Response> {
+    pub fn send_checked<Srv>(&self, builder: RequestBuilder<Srv>) -> Result<Response>
+    where
+        Srv: ServiceType,
+    {
         self.block_on(async { builder.send().await })
     }
 

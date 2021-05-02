@@ -56,6 +56,25 @@ pub enum VersionSelector {
     Any,
 }
 
+/// An indicator that no service is used.
+#[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
+pub struct NoService;
+
+impl ServiceType for NoService {
+    fn catalog_type(&self) -> &'static str {
+        "<no service>"
+    }
+
+    fn major_version_supported(&self, _version: ApiVersion) -> bool {
+        false
+    }
+
+    fn version_discovery_supported(&self) -> bool {
+        false
+    }
+}
+
 // TODO(dtantsur): change $name to be a literal
 macro_rules! service {
     ($(#[$attr:meta])* $var:ident: $cls:ident -> $name:expr, discovery $disc:expr) => {
