@@ -74,8 +74,8 @@ impl AuthType for BasicAuth {
     async fn get_endpoint(
         &self,
         _client: &Client,
-        _service_type: String,
-        _filters: EndpointFilters,
+        _service_type: &str,
+        _filters: &EndpointFilters,
     ) -> Result<Url, Error> {
         Ok(self.endpoint.clone())
     }

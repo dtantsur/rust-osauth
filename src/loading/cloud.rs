@@ -444,7 +444,7 @@ mod test_cloud_config {
         let sscfg = cfg.create_session_config().unwrap();
         assert!(sscfg
             .client
-            .get_endpoint("baremetal".into(), Default::default())
+            .get_endpoint("baremetal", &Default::default())
             .await
             .is_err());
     }
@@ -465,7 +465,7 @@ mod test_cloud_config {
         assert_eq!(
             sscfg
                 .client
-                .get_endpoint("baremetal".into(), Default::default())
+                .get_endpoint("baremetal", &Default::default())
                 .await
                 .unwrap()
                 .as_str(),

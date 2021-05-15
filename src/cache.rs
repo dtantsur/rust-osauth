@@ -103,11 +103,7 @@ impl EndpointCache {
         } else {
             let ep = match self.overrides.get(catalog_type) {
                 Some(found) => found.clone(),
-                None => {
-                    client
-                        .get_endpoint(catalog_type.to_string(), self.filters.clone())
-                        .await?
-                }
+                None => client.get_endpoint(catalog_type, &self.filters).await?,
             };
             let info = ServiceInfo::fetch(service, ep, client).await?;
             let value = filter(&info);

@@ -104,8 +104,8 @@ impl AuthenticatedClient {
     #[inline]
     pub async fn get_endpoint(
         &self,
-        service_type: String,
-        filters: EndpointFilters,
+        service_type: &str,
+        filters: &EndpointFilters,
     ) -> Result<Url, Error> {
         self.auth
             .get_endpoint(&self.client, service_type, filters)

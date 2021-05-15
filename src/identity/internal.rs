@@ -98,15 +98,15 @@ impl Internal {
     pub async fn get_endpoint(
         &self,
         client: &Client,
-        service_type: String,
-        filters: EndpointFilters,
+        service_type: &str,
+        filters: &EndpointFilters,
     ) -> Result<Url, Error> {
         debug!(
             "Requesting a catalog endpoint for service '{}', filters {:?}",
             service_type, filters
         );
         let token = self.cached_token(client).await?;
-        token.catalog.find_endpoint(&service_type, &filters)
+        token.catalog.find_endpoint(service_type, filters)
     }
 
     /// Get the authentication token string.

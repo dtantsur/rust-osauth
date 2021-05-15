@@ -191,8 +191,8 @@ impl AuthType for Password {
     async fn get_endpoint(
         &self,
         client: &Client,
-        service_type: String,
-        filters: EndpointFilters,
+        service_type: &str,
+        filters: &EndpointFilters,
     ) -> Result<Url, Error> {
         self.inner.get_endpoint(client, service_type, filters).await
     }

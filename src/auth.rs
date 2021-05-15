@@ -43,8 +43,8 @@ pub trait AuthType: Debug + Sync + Send {
     async fn get_endpoint(
         &self,
         client: &Client,
-        service_type: String,
-        filters: EndpointFilters,
+        service_type: &str,
+        filters: &EndpointFilters,
     ) -> Result<Url, Error>;
 
     /// Refresh the authentication (renew the token, etc).
@@ -109,8 +109,8 @@ impl AuthType for NoAuth {
     async fn get_endpoint(
         &self,
         _client: &Client,
-        service_type: String,
-        _filters: EndpointFilters,
+        service_type: &str,
+        _filters: &EndpointFilters,
     ) -> Result<Url, Error> {
         self.endpoint.clone().ok_or_else(|| {
             Error::new(
@@ -154,7 +154,7 @@ pub mod test {
     async fn test_noauth_get_endpoint() {
         let a = NoAuth::new("http://127.0.0.1:8080/v1").unwrap();
         let e = a
-            .get_endpoint(&Client::new(), String::from("foobar"), Default::default())
+            .get_endpoint(&Client::new(), "foobar", &Default::default())
             .await
             .unwrap();
         assert_eq!(e.scheme(), "http");
