@@ -29,7 +29,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
 
-use crate::{services::VersionedService, ApiVersion};
+use crate::services::{NoService, ServiceType, VersionedService};
+use crate::ApiVersion;
 
 #[cfg(feature = "stream")]
 use super::stream::paginated;
@@ -144,7 +145,7 @@ impl AuthenticatedClient {
     /// Start an authenticated request.
     #[inline]
     pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        self.request_service((), method, url)
+        self.request_service(NoService, method, url)
     }
 
     /// Start an authenticated request for a service.
@@ -153,7 +154,10 @@ impl AuthenticatedClient {
         service: S,
         method: Method,
         url: Url,
-    ) -> RequestBuilder<S> {
+    ) -> RequestBuilder<S>
+    where
+        S: ServiceType,
+    {
         RequestBuilder {
             inner: self.client.request(method, url),
             client: self.clone(),
@@ -181,7 +185,7 @@ impl From<AuthenticatedClient> for Client {
 /// If the type parameter `S` is a service, additional functionality is available.
 #[derive(Debug)]
 #[must_use = "preparing a request is not enough to run it"]
-pub struct RequestBuilder<S = ()> {
+pub struct RequestBuilder<S: ServiceType = NoService> {
     inner: HttpRequestBuilder,
     client: AuthenticatedClient,
     service: S,
@@ -256,7 +260,10 @@ pub async fn check(response: Response) -> Result<Response, Error> {
     }
 }
 
-impl<S> RequestBuilder<S> {
+impl<S> RequestBuilder<S>
+where
+    S: ServiceType,
+{
     /// Add a body to the request.
     pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder<S> {
         RequestBuilder {
@@ -353,7 +360,7 @@ where
 
 impl<S> RequestBuilder<S>
 where
-    S: Clone,
+    S: ServiceType + Clone,
 {
     /// Send the request and receive JSON in response with pagination.
     ///

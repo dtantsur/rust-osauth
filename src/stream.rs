@@ -22,6 +22,8 @@ use futures::stream::{Stream, TryStreamExt};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::services::ServiceType;
+
 use super::client::RequestBuilder;
 use super::Error;
 
@@ -53,7 +55,7 @@ fn chunks<T, S>(
 where
     T: PaginatedResource + Unpin,
     T::Root: Into<Vec<T>> + Send,
-    S: Clone,
+    S: ServiceType + Clone,
 {
     let mut marker = starting_with;
 
@@ -88,7 +90,7 @@ pub(crate) fn paginated<T, S>(
 where
     T: PaginatedResource + Unpin,
     T::Root: Into<Vec<T>> + Send,
-    S: Clone,
+    S: ServiceType + Clone,
 {
     try_stream! {
         let iter = chunks(builder, limit, starting_with);
