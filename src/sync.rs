@@ -248,9 +248,8 @@ impl SyncSession {
     pub fn get_endpoint<Srv, I>(&self, service: Srv, path: I) -> Result<Url>
     where
         Srv: ServiceType + Send,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.block_on(self.inner.get_endpoint(service, path))
     }
@@ -287,8 +286,7 @@ impl SyncSession {
     pub fn pick_api_version<Srv, I>(&self, service: Srv, versions: I) -> Result<Option<ApiVersion>>
     where
         Srv: ServiceType + Send,
-        I: IntoIterator<Item = ApiVersion>,
-        I::IntoIter: Send,
+        I: IntoIterator<Item = ApiVersion> + Send,
     {
         self.block_on(self.inner.pick_api_version(service, versions))
     }
@@ -342,9 +340,8 @@ impl SyncSession {
     ) -> Result<RequestBuilder<Srv>>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.block_on(self.inner.request(service, method, path))
     }
@@ -356,9 +353,8 @@ impl SyncSession {
     pub fn get<Srv, I>(&self, service: Srv, path: I) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.send_checked(self.request(service, Method::GET, path)?)
     }
@@ -391,9 +387,8 @@ impl SyncSession {
     pub fn get_json<Srv, I, T>(&self, service: Srv, path: I) -> Result<T>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
         self.fetch_json(self.request(service, Method::GET, path)?)
@@ -407,9 +402,8 @@ impl SyncSession {
     pub fn get_json_query<Srv, I, Q, T>(&self, service: Srv, path: I, query: Q) -> Result<T>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         Q: Serialize + Send,
         T: DeserializeOwned + Send,
     {
@@ -424,9 +418,8 @@ impl SyncSession {
     pub fn get_query<Srv, I, Q>(&self, service: Srv, path: I, query: Q) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         Q: Serialize + Send,
     {
         self.send_checked(self.request(service, Method::GET, path)?.query(&query))
@@ -470,9 +463,8 @@ impl SyncSession {
     pub fn post<Srv, I, T>(&self, service: Srv, path: I, body: T) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
     {
         self.send_checked(self.request(service, Method::POST, path)?.json(&body))
@@ -487,9 +479,8 @@ impl SyncSession {
     pub fn post_json<Srv, I, T, R>(&self, service: Srv, path: I, body: T) -> Result<R>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
@@ -505,9 +496,8 @@ impl SyncSession {
     pub fn put<Srv, I, T>(&self, service: Srv, path: I, body: T) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
     {
         self.send_checked(self.request(service, Method::PUT, path)?.json(&body))
@@ -520,9 +510,8 @@ impl SyncSession {
     pub fn put_empty<Srv, I>(&self, service: Srv, path: I) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.send_checked(self.request(service, Method::PUT, path)?)
     }
@@ -536,9 +525,8 @@ impl SyncSession {
     pub fn put_json<Srv, I, T, R>(&self, service: Srv, path: I, body: T) -> Result<R>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
         R: DeserializeOwned + Send,
     {
@@ -552,9 +540,8 @@ impl SyncSession {
     pub fn delete<Srv, I>(&self, service: Srv, path: I) -> Result<Response>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.send_checked(self.request(service, Method::DELETE, path)?)
     }
