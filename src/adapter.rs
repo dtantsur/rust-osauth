@@ -228,9 +228,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// endpoint automatically.
     pub async fn get_endpoint<I>(&self, path: I) -> Result<Url, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.inner.get_endpoint(self.service.clone(), path).await
     }
@@ -271,8 +270,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// ```
     pub async fn pick_api_version<I>(&self, versions: I) -> Result<Option<ApiVersion>, Error>
     where
-        I: IntoIterator<Item = ApiVersion>,
-        I::IntoIter: Send,
+        I: IntoIterator<Item = ApiVersion> + Send,
     {
         self.inner
             .pick_api_version(self.service.clone(), versions)
@@ -314,9 +312,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     /// `post`, `put` or `delete` calls instead.
     pub async fn request<I>(&self, method: Method, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         let rb = self
             .inner
@@ -338,9 +335,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn get<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(Method::GET, path).await
     }
@@ -380,9 +376,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn get_json<I, T>(&self, path: I) -> Result<T, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
         self.request(Method::GET, path)
@@ -397,9 +392,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn post<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(Method::POST, path).await
     }
@@ -412,9 +406,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn post_json<I, T>(&self, path: I, body: T) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
     {
         Ok(self.post(path).await?.json(&body))
@@ -426,9 +419,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn put<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(Method::PUT, path).await
     }
@@ -439,9 +431,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn put_empty<I>(&self, path: I) -> Result<(), Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(Method::PUT, path)
             .await?
@@ -458,9 +449,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn put_json<I, T>(&self, path: I, body: T) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
     {
         Ok(self.put(path).await?.json(&body))
@@ -472,9 +462,8 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     #[inline]
     pub async fn delete<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(Method::DELETE, path).await
     }

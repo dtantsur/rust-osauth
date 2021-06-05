@@ -160,6 +160,34 @@ async fn fetch_root(
 }
 
 impl ServiceInfo {
+    #[inline]
+    pub fn get_api_versions(&self) -> Option<(ApiVersion, ApiVersion)> {
+        match (self.minimum_version, self.current_version) {
+            (Some(min), Some(max)) => Some((min, max)),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn get_endpoint<I>(&self, path: I) -> Url
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        url::extend(self.root_url.clone(), path)
+    }
+
+    #[inline]
+    pub fn pick_api_version<I>(&self, versions: I) -> Option<ApiVersion>
+    where
+        I: IntoIterator<Item = ApiVersion>,
+    {
+        versions
+            .into_iter()
+            .filter(|item| self.supports_api_version(*item))
+            .max()
+    }
+
     fn from_root<Srv: ServiceType>(mut value: Root, service: Srv) -> Result<ServiceInfo, Error> {
         trace!(
             "Available major versions for {} service: {:?}",

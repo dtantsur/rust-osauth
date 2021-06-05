@@ -27,7 +27,6 @@ use super::client::{AuthenticatedClient, RequestBuilder};
 use super::loading::CloudConfig;
 use super::protocol::ServiceInfo;
 use super::services::ServiceType;
-use super::url;
 use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
 
 /// An OpenStack API session.
@@ -327,13 +326,8 @@ impl Session {
         &self,
         service: Srv,
     ) -> Result<Option<(ApiVersion, ApiVersion)>, Error> {
-        self.extract_service_info(service, |info| {
-            match (info.minimum_version, info.current_version) {
-                (Some(min), Some(max)) => Some((min, max)),
-                _ => None,
-            }
-        })
-        .await
+        self.extract_service_info(service, ServiceInfo::get_api_versions)
+            .await
     }
 
     /// Construct and endpoint for the given service from the path.
@@ -343,15 +337,11 @@ impl Session {
     pub async fn get_endpoint<Srv, I>(&self, service: Srv, path: I) -> Result<Url, Error>
     where
         Srv: ServiceType + Send,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
-        let path_iter = path.into_iter();
-        self.extract_service_info(service, |info| {
-            url::extend(info.root_url.clone(), path_iter)
-        })
-        .await
+        self.extract_service_info(service, |info| info.get_endpoint(path))
+            .await
     }
 
     /// Get the currently used major version from the given service.
@@ -398,18 +388,10 @@ impl Session {
     ) -> Result<Option<ApiVersion>, Error>
     where
         Srv: ServiceType + Send,
-        I: IntoIterator<Item = ApiVersion>,
-        I::IntoIter: Send,
+        I: IntoIterator<Item = ApiVersion> + Send,
     {
-        let vers = versions.into_iter();
-        Ok(if vers.size_hint().1 == Some(0) {
-            None
-        } else {
-            self.extract_service_info(service, |info| {
-                vers.filter(|item| info.supports_api_version(*item)).max()
-            })
-            .await?
-        })
+        self.extract_service_info(service, |info| info.pick_api_version(versions))
+            .await
     }
 
     /// Check if the service supports the API version.
@@ -421,9 +403,8 @@ impl Session {
     where
         Srv: ServiceType + Send,
     {
-        self.pick_api_version(service, Some(version))
+        self.extract_service_info(service, |info| info.supports_api_version(version))
             .await
-            .map(|x| x.is_some())
     }
 
     /// Make an HTTP request to the given service.
@@ -468,9 +449,8 @@ impl Session {
     ) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         let url = self.get_endpoint(service.clone(), path).await?;
         Ok(self.client.request_service(service.clone(), method, url))
@@ -483,9 +463,8 @@ impl Session {
     pub async fn get<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(service, Method::GET, path).await
     }
@@ -522,9 +501,8 @@ impl Session {
     pub async fn get_json<Srv, I, T>(&self, service: Srv, path: I) -> Result<T, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: DeserializeOwned + Send,
     {
         self.request(service, Method::GET, path)
@@ -540,9 +518,8 @@ impl Session {
     pub async fn post<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(service, Method::POST, path).await
     }
@@ -561,9 +538,8 @@ impl Session {
     ) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
     {
         Ok(self.post(service, path).await?.json(&body))
@@ -576,9 +552,8 @@ impl Session {
     pub async fn put<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(service, Method::PUT, path).await
     }
@@ -590,9 +565,8 @@ impl Session {
     pub async fn put_empty<Srv, I>(&self, service: Srv, path: I) -> Result<(), Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(service, Method::PUT, path)
             .await?
@@ -615,9 +589,8 @@ impl Session {
     ) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
         T: Serialize + Send,
     {
         Ok(self.put(service, path).await?.json(&body))
@@ -630,9 +603,8 @@ impl Session {
     pub async fn delete<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
-        I: IntoIterator,
+        I: IntoIterator + Send,
         I::Item: AsRef<str>,
-        I::IntoIter: Send,
     {
         self.request(service, Method::DELETE, path).await
     }
