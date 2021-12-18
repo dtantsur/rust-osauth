@@ -45,11 +45,10 @@ pub type SyncStreamItem = result::Result<Bytes, ::reqwest::Error>;
 
 /// A reader into an asynchronous stream.
 #[derive(Debug)]
-pub struct SyncStream<'s, S, E = ::reqwest::Error>
+pub struct SyncStream<S, E = ::reqwest::Error>
 where
     S: Stream<Item = result::Result<Bytes, E>> + Unpin,
 {
-    session: &'s SyncSession,
     inner: BlockingStream<S>,
     current: io::Cursor<Bytes>,
 }
@@ -458,7 +457,7 @@ impl SyncSession {
     /// ```
     #[inline]
     pub fn download(&self, response: Response) -> SyncStream<impl Stream<Item = SyncStreamItem>> {
-        SyncStream::new(self, response.bytes_stream())
+        SyncStream::new(response.bytes_stream())
     }
 
     /// POST a JSON object.
@@ -583,20 +582,19 @@ impl SyncSession {
     }
 }
 
-impl<'s, S, E> SyncStream<'s, S, E>
+impl<S, E> SyncStream<S, E>
 where
     S: Stream<Item = result::Result<Bytes, E>> + Unpin,
 {
-    fn new(session: &'s SyncSession, inner: S) -> SyncStream<S, E> {
+    fn new(inner: S) -> SyncStream<S, E> {
         SyncStream {
-            session,
             inner: executor::block_on_stream(inner),
             current: io::Cursor::default(),
         }
     }
 }
 
-impl<'s, S, E> io::Read for SyncStream<'s, S, E>
+impl<S, E> io::Read for SyncStream<S, E>
 where
     S: Stream<Item = result::Result<Bytes, E>> + Unpin,
     E: Into<Box<dyn ::std::error::Error + Send + Sync + 'static>>,
@@ -775,22 +773,20 @@ mod test {
 
     #[test]
     fn test_stream_empty() {
-        let s = new_sync_session(test::URL);
         let inner = stream::empty::<Result<Bytes, HttpError>>();
-        let mut st = SyncStream::new(&s, inner);
+        let mut st = SyncStream::new(inner);
         let mut buffer = Vec::new();
         assert_eq!(0, st.read_to_end(&mut buffer).unwrap());
     }
 
     #[test]
     fn test_stream_all() {
-        let s = new_sync_session(test::URL);
         let data: Vec<Result<Bytes, Error>> = vec![
             Ok(Bytes::from(vec![1u8, 2, 3])),
             Ok(Bytes::from(vec![4u8])),
             Ok(Bytes::from(vec![5u8, 6])),
         ];
-        let mut st = SyncStream::new(&s, stream::iter(data.into_iter()));
+        let mut st = SyncStream::new(stream::iter(data.into_iter()));
         let mut buffer = Vec::new();
         assert_eq!(6, st.read_to_end(&mut buffer).unwrap());
         assert_eq!(vec![1, 2, 3, 4, 5, 6], buffer);
@@ -798,13 +794,12 @@ mod test {
 
     #[test]
     fn test_stream_parts() {
-        let s = new_sync_session(test::URL);
         let data: Vec<Result<Bytes, Error>> = vec![
             Ok(Bytes::from(vec![1u8, 2, 3])),
             Ok(Bytes::from(vec![4u8])),
             Ok(Bytes::from(vec![5u8, 6, 7, 8])),
         ];
-        let mut st = SyncStream::new(&s, stream::iter(data.into_iter()));
+        let mut st = SyncStream::new(stream::iter(data.into_iter()));
         let mut buffer = [0; 3];
         assert_eq!(3, st.read(&mut buffer).unwrap());
         assert_eq!([1, 2, 3], buffer);
@@ -819,10 +814,9 @@ mod test {
 
     #[test]
     fn test_body() {
-        let s = new_sync_session(test::URL);
         let data = vec![42; 16_777_000]; // a bit short of 16 MiB
         let body = SyncBody::new(Cursor::new(data));
-        let mut st = SyncStream::new(&s, body);
+        let mut st = SyncStream::new(body);
         let mut buffer = Vec::new();
         assert_eq!(16_777_000, st.read_to_end(&mut buffer).unwrap());
     }
