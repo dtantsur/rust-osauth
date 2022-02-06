@@ -14,7 +14,7 @@ concepts like microversions. The API is quite low level and does not provide
 any ready-to-use objects (like `Server` or `Port`). Pagination is supported
 but must be configured explicitly.
 
-OpenStack releases starting with Queens are officially supported, although
+OpenStack releases starting with Train are officially supported, although
 support for releases older than 1.5 years is best-effort and may be dropped
 without a prior warning (it will not be considered a breaking change).
 

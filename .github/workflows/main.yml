@@ -1,13 +1,13 @@
-name: CI
+name: Builds and tests
 on: [push, pull_request]
 
 jobs:
   test:
-    name: Test
+    name: Test on ${{ matrix.rust }} (${{ matrix.flags}})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, nightly, 1.50.0]
+        rust: [stable, nightly, 1.51.0]
         flags:
           - ""
           - "--no-default-features"
