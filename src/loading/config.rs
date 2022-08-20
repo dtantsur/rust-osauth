@@ -41,7 +41,7 @@ fn inject_profiles(
     clouds_public: &serde_yaml::Mapping,
     clouds: &mut serde_yaml::Mapping,
 ) -> Result<(), Error> {
-    let clouds_mapping = match clouds.get_mut(&"clouds".into()).ok_or_else(|| {
+    let clouds_mapping = match clouds.get_mut("clouds").ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidConfig,
             "clouds.yaml must contain a clouds object",
@@ -56,25 +56,24 @@ fn inject_profiles(
         }
     };
 
-    let clouds_public_mapping =
-        match clouds_public.get(&"public-clouds".into()).ok_or_else(|| {
-            Error::new(
+    let clouds_public_mapping = match clouds_public.get("public-clouds").ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidConfig,
+            "clouds-public.yaml must contain a public-clouds object",
+        )
+    })? {
+        serde_yaml::Value::Mapping(map) => map,
+        other => {
+            return Err(Error::new(
                 ErrorKind::InvalidConfig,
-                "clouds-public.yaml must contain a public-clouds object",
-            )
-        })? {
-            serde_yaml::Value::Mapping(map) => map,
-            other => {
-                return Err(Error::new(
-                    ErrorKind::InvalidConfig,
-                    format!("public-clouds object must be a mapping, got {:?}", other),
-                ));
-            }
-        };
+                format!("public-clouds object must be a mapping, got {:?}", other),
+            ));
+        }
+    };
 
     for (cloud_name, cloud) in clouds_mapping.iter_mut() {
         if let Some(cloud_mapping) = cloud.as_mapping_mut() {
-            if let Some(profile_value) = cloud_mapping.get(&"profile".into()) {
+            if let Some(profile_value) = cloud_mapping.get("profile") {
                 if let Some(profile_name) = profile_value.as_str() {
                     if let Some(profile) = clouds_public_mapping.get(profile_value) {
                         if let Some(profile_mapping) = profile.as_mapping() {
@@ -440,72 +439,80 @@ public-clouds:
         assert_eq!(
             "region2",
             clouds_data
-                .get(&"clouds".into())
+                .get("clouds")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"cloud_name".into())
+                .get("cloud_name")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"region_name".into())
+                .get("region_name")
+                .unwrap()
+                .as_str()
                 .unwrap()
         );
 
         assert_eq!(
             "user1",
             clouds_data
-                .get(&"clouds".into())
+                .get("clouds")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"cloud_name".into())
+                .get("cloud_name")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"auth".into())
+                .get("auth")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"username".into())
+                .get("username")
+                .unwrap()
+                .as_str()
                 .unwrap()
         );
 
         assert_eq!(
             "password1",
             clouds_data
-                .get(&"clouds".into())
+                .get("clouds")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"cloud_name".into())
+                .get("cloud_name")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"auth".into())
+                .get("auth")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"password".into())
+                .get("password")
+                .unwrap()
+                .as_str()
                 .unwrap()
         );
 
         assert_eq!(
             "url2",
             clouds_data
-                .get(&"clouds".into())
+                .get("clouds")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"cloud_name".into())
+                .get("cloud_name")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"auth".into())
+                .get("auth")
                 .unwrap()
                 .as_mapping()
                 .unwrap()
-                .get(&"auth_url".into())
+                .get("auth_url")
+                .unwrap()
+                .as_str()
                 .unwrap()
         );
     }

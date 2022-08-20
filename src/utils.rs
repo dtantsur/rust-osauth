@@ -86,11 +86,11 @@ clouds:
         merge_mappings(src, &mut dest, true);
 
         let dest_cloud = dest
-            .get(&"clouds".into())
+            .get("clouds")
             .unwrap()
             .as_mapping()
             .unwrap()
-            .get(&"cloud_name".into())
+            .get("cloud_name")
             .unwrap()
             .to_owned();
 
@@ -108,18 +108,23 @@ clouds:
 
         assert_eq!(
             "user2",
-            dest_auth.get(&"username".into()).unwrap().as_str().unwrap()
+            dest_auth.get("username").unwrap().as_str().unwrap()
         );
 
         assert_eq!(
             "password1",
-            dest_auth.get(&"password".into()).unwrap().as_str().unwrap()
+            dest_auth.get("password").unwrap().as_str().unwrap()
         );
 
         assert_eq!(
             "project1",
+            dest_auth.get("project_name").unwrap().as_str().unwrap()
+        );
+
+        assert_eq!(
+            "domain1",
             dest_auth
-                .get(&"project_name".into())
+                .get("project_domain_name")
                 .unwrap()
                 .as_str()
                 .unwrap()
@@ -127,26 +132,10 @@ clouds:
 
         assert_eq!(
             "domain1",
-            dest_auth
-                .get(&"project_domain_name".into())
-                .unwrap()
-                .as_str()
-                .unwrap()
+            dest_auth.get("user_domain_name").unwrap().as_str().unwrap()
         );
 
-        assert_eq!(
-            "domain1",
-            dest_auth
-                .get(&"user_domain_name".into())
-                .unwrap()
-                .as_str()
-                .unwrap()
-        );
-
-        assert_eq!(
-            "url1",
-            dest_auth.get(&"auth_url".into()).unwrap().as_str().unwrap()
-        );
+        assert_eq!("url1", dest_auth.get("auth_url").unwrap().as_str().unwrap());
     }
 
     #[test]
