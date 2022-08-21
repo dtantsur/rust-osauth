@@ -68,8 +68,6 @@
 //! * `stream` adds [get_json_paginated](struct.Session.html#method.get_json_paginated) and
 //!   [get_json_query_paginated](struct.Session.html#method.get_json_query_paginated) to `Session`
 //!   and `Adapter`; enabled by default.
-//! * `sync` adds a [synchronous wrapper](sync/struct.SyncSession.html) around the `Session`;
-//!   enabled by default.
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]
@@ -123,8 +121,6 @@ pub mod services;
 mod session;
 #[cfg(feature = "stream")]
 mod stream;
-#[cfg(feature = "sync")]
-pub mod sync;
 mod url;
 mod utils;
 
