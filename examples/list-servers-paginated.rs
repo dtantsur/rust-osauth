@@ -58,7 +58,7 @@ async fn main() {
 
     let sstream = adapter
         .get(&["servers"])
-        .fetch_json_paginated::<Server>(limit, None)
+        .fetch_paginated::<Server>(limit, None)
         .await;
     pin_mut!(sstream);
     while let Some(srv) = sstream

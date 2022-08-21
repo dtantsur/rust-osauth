@@ -306,7 +306,7 @@ impl RequestBuilder {
     }
 
     /// Send the request and receive JSON in response.
-    pub async fn fetch_json<T>(self) -> Result<T, Error>
+    pub async fn fetch<T>(self) -> Result<T, Error>
     where
         T: DeserializeOwned + Send,
     {
@@ -379,7 +379,7 @@ impl RequestBuilder {
     ///
     /// let servers = session
     ///     .get(osauth::services::COMPUTE, &["servers"])
-    ///     .fetch_json_paginated::<Server>(None, None)
+    ///     .fetch_paginated::<Server>(None, None)
     ///     .await;
     ///
     /// pin_mut!(servers);
@@ -395,7 +395,7 @@ impl RequestBuilder {
     ///
     /// Will panic during iteration if the request builder has a streaming body.
     #[cfg(feature = "stream")]
-    pub async fn fetch_json_paginated<T>(
+    pub async fn fetch_paginated<T>(
         self,
         limit: Option<usize>,
         starting_with: Option<<T as PaginatedResource>::Id>,
@@ -427,7 +427,7 @@ impl FetchNext for RequestBuilder {
             .try_clone()
             .expect("Builder with a streaming body cannot be used")
             .query(&query);
-        prepared.fetch_json().await
+        prepared.fetch().await
     }
 }
 

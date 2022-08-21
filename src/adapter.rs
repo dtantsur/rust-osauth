@@ -371,7 +371,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
         I::Item: AsRef<str>,
         T: DeserializeOwned + Send,
     {
-        self.request(Method::GET, path).fetch_json::<T>().await
+        self.request(Method::GET, path).fetch::<T>().await
     }
 
     /// Start a POST request.

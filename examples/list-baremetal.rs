@@ -37,7 +37,7 @@ async fn main() {
     let nodes: NodesRoot = session
         .get(osauth::services::BAREMETAL, &["nodes"])
         .api_version((1, 5))
-        .fetch_json()
+        .fetch()
         .await
         .expect("Failed to list nodes");
     for node in nodes.nodes {
