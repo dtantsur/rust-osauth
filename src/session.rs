@@ -16,8 +16,13 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-use reqwest::{Client, Method, Url};
+#[cfg(feature = "stream")]
+use futures::Stream;
+use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::Error as HttpError;
+use reqwest::{Body, Client, Method, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use static_assertions::assert_impl_all;
@@ -26,8 +31,11 @@ use super::cache::EndpointCache;
 use super::client::{AuthenticatedClient, RequestBuilder};
 use super::loading::CloudConfig;
 use super::protocol::ServiceInfo;
-use super::services::ServiceType;
+use super::services::{ServiceType, VersionedService};
 use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
+
+#[cfg(feature = "stream")]
+use super::stream::PaginatedResource;
 
 /// An OpenStack API session.
 ///
@@ -420,7 +428,7 @@ impl Session {
     /// Otherwise the base API version is used. You can use
     /// [pick_api_version](#method.pick_api_version) to choose an API version to use.
     ///
-    /// The result is a `RequestBuilder` that can be customized further. Error checking and response
+    /// The result is a `ServiceRequestBuilder` that can be customized further. Error checking and response
     /// parsing can be done using functions from the [request](request/index.html) module.
     ///
     /// ```rust,no_run
@@ -446,21 +454,28 @@ impl Session {
         service: Srv,
         method: Method,
         path: I,
-    ) -> Result<RequestBuilder<Srv>, Error>
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
     {
         let url = self.get_endpoint(service.clone(), path).await?;
-        Ok(self.client.request_service(service.clone(), method, url))
+        Ok(ServiceRequestBuilder {
+            inner: self.client.request(method, url),
+            service: service.clone(),
+        })
     }
 
     /// Start a GET request.
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn get<Srv, I>(
+        &self,
+        service: Srv,
+        path: I,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -515,7 +530,11 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn post<Srv, I>(
+        &self,
+        service: Srv,
+        path: I,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -535,7 +554,7 @@ impl Session {
         service: Srv,
         path: I,
         body: T,
-    ) -> Result<RequestBuilder<Srv>, Error>
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -549,7 +568,11 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn put<Srv, I>(
+        &self,
+        service: Srv,
+        path: I,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -586,7 +609,7 @@ impl Session {
         service: Srv,
         path: I,
         body: T,
-    ) -> Result<RequestBuilder<Srv>, Error>
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -600,7 +623,11 @@ impl Session {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn delete<Srv, I>(&self, service: Srv, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn delete<Srv, I>(
+        &self,
+        service: Srv,
+        path: I,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -631,8 +658,204 @@ impl Session {
     }
 }
 
+/// A request builder for a service.
+#[derive(Debug)]
+#[must_use = "preparing a request is not enough to run it"]
+pub struct ServiceRequestBuilder<S: ServiceType> {
+    inner: RequestBuilder,
+    service: S,
+}
+
+impl<S> ServiceRequestBuilder<S>
+where
+    S: ServiceType,
+{
+    /// Add a body to the request.
+    pub fn body<T: Into<Body>>(self, body: T) -> ServiceRequestBuilder<S> {
+        ServiceRequestBuilder {
+            inner: self.inner.body(body),
+            ..self
+        }
+    }
+
+    /// Add a header to the request.
+    pub fn header<K, V>(self, key: K, value: V) -> ServiceRequestBuilder<S>
+    where
+        HeaderName: TryFrom<K>,
+        <HeaderName as TryFrom<K>>::Error: Into<HttpError>,
+        HeaderValue: TryFrom<V>,
+        <HeaderValue as TryFrom<V>>::Error: Into<HttpError>,
+    {
+        ServiceRequestBuilder {
+            inner: self.inner.header(key, value),
+            ..self
+        }
+    }
+
+    /// Add headers to a request.
+    pub fn headers(self, headers: HeaderMap) -> ServiceRequestBuilder<S> {
+        ServiceRequestBuilder {
+            inner: self.inner.headers(headers),
+            ..self
+        }
+    }
+
+    /// Add a JSON body to the request.
+    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> ServiceRequestBuilder<S> {
+        ServiceRequestBuilder {
+            inner: self.inner.json(json),
+            ..self
+        }
+    }
+
+    /// Send a query with the request.
+    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> ServiceRequestBuilder<S> {
+        ServiceRequestBuilder {
+            inner: self.inner.query(query),
+            ..self
+        }
+    }
+
+    /// Override the timeout for the request.
+    pub fn timeout(self, timeout: Duration) -> ServiceRequestBuilder<S> {
+        ServiceRequestBuilder {
+            inner: self.inner.timeout(timeout),
+            ..self
+        }
+    }
+
+    /// Send the request and receive JSON in response.
+    pub async fn fetch_json<T>(self) -> Result<T, Error>
+    where
+        T: DeserializeOwned + Send,
+    {
+        self.send().await?.json::<T>().await.map_err(Error::from)
+    }
+
+    /// Send the request and check for errors.
+    pub async fn send(self) -> Result<Response, Error> {
+        self.inner.send().await
+    }
+
+    /// Send the request without checking for HTTP and OpenStack errors.
+    pub async fn send_unchecked(self) -> Result<Response, Error> {
+        self.inner.send_unchecked().await
+    }
+}
+
+impl<S> ServiceRequestBuilder<S>
+where
+    S: VersionedService,
+{
+    /// Add an API version to this request.
+    pub fn api_version<A: Into<ApiVersion>>(self, version: A) -> ServiceRequestBuilder<S> {
+        let (name, value) = self.service.get_version_header(version.into());
+        ServiceRequestBuilder {
+            inner: self.inner.header(name, value),
+            ..self
+        }
+    }
+
+    /// Set the API version on the request.
+    pub fn set_api_version<A: Into<ApiVersion>>(&mut self, version: A) {
+        take_mut::take(self, |rb| rb.api_version(version));
+    }
+}
+
+impl<S> ServiceRequestBuilder<S>
+where
+    S: ServiceType + Clone,
+{
+    /// Send the request and receive JSON in response with pagination.
+    ///
+    /// Note that the actual requests will happen only on iteration over the results.
+    ///
+    /// ```rust,no_run
+    /// # async fn example() -> Result<(), osauth::Error> {
+    /// use futures::pin_mut;
+    /// use futures::stream::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct Server {
+    ///     pub id: String,
+    ///     pub name: String,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// pub struct ServersRoot {
+    ///     pub servers: Vec<Server>,
+    /// }
+    ///
+    /// // This implementatin defines the relationship between the root resource and its items.
+    /// impl osauth::client::PaginatedResource for Server {
+    ///     type Id = String;
+    ///     type Root = ServersRoot;
+    ///     fn resource_id(&self) -> Self::Id {
+    ///         self.id.clone()
+    ///     }
+    /// }
+    ///
+    /// // This is another required part of the pagination contract.
+    /// impl From<ServersRoot> for Vec<Server> {
+    ///     fn from(value: ServersRoot) -> Vec<Server> {
+    ///         value.servers
+    ///     }
+    /// }
+    ///
+    /// let session = osauth::Session::from_env().await?;
+    ///
+    /// let servers = session
+    ///     .get(osauth::services::COMPUTE, &["servers"])
+    ///     .await?
+    ///     .fetch_json_paginated::<Server>(None, None)
+    ///     .await;
+    ///
+    /// pin_mut!(servers);
+    /// while let Some(srv) = servers.try_next().await? {
+    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
+    /// }
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Will panic during iteration if the request builder has a streaming body.
+    #[cfg(feature = "stream")]
+    pub async fn fetch_json_paginated<T>(
+        self,
+        limit: Option<usize>,
+        starting_with: Option<<T as PaginatedResource>::Id>,
+    ) -> impl Stream<Item = Result<T, Error>>
+    where
+        T: PaginatedResource + Unpin,
+        <T as PaginatedResource>::Root: Into<Vec<T>> + Send,
+    {
+        self.inner.fetch_json_paginated(limit, starting_with).await
+    }
+
+    /// Attempt to clone this request builder.
+    pub fn try_clone(&self) -> Option<ServiceRequestBuilder<S>> {
+        self.inner.try_clone().map(|inner| ServiceRequestBuilder {
+            inner,
+            service: self.service.clone(),
+        })
+    }
+}
+
+impl<S> Into<RequestBuilder> for ServiceRequestBuilder<S>
+where
+    S: ServiceType,
+{
+    fn into(self: ServiceRequestBuilder<S>) -> RequestBuilder {
+        self.inner
+    }
+}
+
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test_session {
     use reqwest::Url;
 
     use super::super::protocol::ServiceInfo;
@@ -769,5 +992,46 @@ pub(crate) mod test {
         let choice = vec![ApiVersion(2, 0), ApiVersion(2, 99)];
         let res = s.pick_api_version(FAKE, choice).await.unwrap();
         assert!(res.is_none());
+    }
+}
+
+#[cfg(test)]
+mod test_request_builder {
+    use http::Method;
+    use reqwest::{Client, Url};
+
+    use crate::client::AuthenticatedClient;
+    use crate::{services, NoAuth};
+
+    use super::ServiceRequestBuilder;
+
+    #[tokio::test]
+    async fn test_api_version() {
+        let cli = AuthenticatedClient::new(Client::new(), NoAuth::new_without_endpoint())
+            .await
+            .unwrap();
+        let rb = ServiceRequestBuilder {
+            inner: cli.request(Method::GET, Url::parse("http://127.0.0.1").unwrap()),
+            service: services::BAREMETAL,
+        }
+        .api_version((1, 42));
+        let req = rb.inner.build().unwrap();
+        let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
+        assert_eq!(hdr.to_str().unwrap(), "1.42");
+    }
+
+    #[tokio::test]
+    async fn test_set_api_version() {
+        let cli = AuthenticatedClient::new(Client::new(), NoAuth::new_without_endpoint())
+            .await
+            .unwrap();
+        let mut rb = ServiceRequestBuilder {
+            inner: cli.request(Method::GET, Url::parse("http://127.0.0.1").unwrap()),
+            service: services::BAREMETAL,
+        };
+        rb.set_api_version((1, 42));
+        let req = rb.inner.build().unwrap();
+        let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
+        assert_eq!(hdr.to_str().unwrap(), "1.42");
     }
 }

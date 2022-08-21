@@ -29,8 +29,6 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
 
-use crate::{services::VersionedService, ApiVersion};
-
 #[cfg(feature = "stream")]
 use super::stream::paginated;
 #[cfg(feature = "stream")]
@@ -144,20 +142,9 @@ impl AuthenticatedClient {
     /// Start an authenticated request.
     #[inline]
     pub fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        self.request_service((), method, url)
-    }
-
-    /// Start an authenticated request for a service.
-    pub(crate) fn request_service<S>(
-        &self,
-        service: S,
-        method: Method,
-        url: Url,
-    ) -> RequestBuilder<S> {
         RequestBuilder {
             inner: self.client.request(method, url),
             client: self.clone(),
-            service,
         }
     }
 
@@ -177,14 +164,11 @@ impl From<AuthenticatedClient> for Client {
 }
 
 /// A request builder with error handling.
-///
-/// If the type parameter `S` is a service, additional functionality is available.
 #[derive(Debug)]
 #[must_use = "preparing a request is not enough to run it"]
-pub struct RequestBuilder<S = ()> {
+pub struct RequestBuilder {
     inner: HttpRequestBuilder,
     client: AuthenticatedClient,
-    service: S,
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,9 +240,9 @@ pub async fn check(response: Response) -> Result<Response, Error> {
     }
 }
 
-impl<S> RequestBuilder<S> {
+impl RequestBuilder {
     /// Add a body to the request.
-    pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder<S> {
+    pub fn body<T: Into<Body>>(self, body: T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.body(body),
             ..self
@@ -266,7 +250,7 @@ impl<S> RequestBuilder<S> {
     }
 
     /// Add a header to the request.
-    pub fn header<K, V>(self, key: K, value: V) -> RequestBuilder<S>
+    pub fn header<K, V>(self, key: K, value: V) -> RequestBuilder
     where
         HeaderName: TryFrom<K>,
         <HeaderName as TryFrom<K>>::Error: Into<HttpError>,
@@ -280,7 +264,7 @@ impl<S> RequestBuilder<S> {
     }
 
     /// Add headers to a request.
-    pub fn headers(self, headers: HeaderMap) -> RequestBuilder<S> {
+    pub fn headers(self, headers: HeaderMap) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.headers(headers),
             ..self
@@ -288,7 +272,7 @@ impl<S> RequestBuilder<S> {
     }
 
     /// Add a JSON body to the request.
-    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> RequestBuilder<S> {
+    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.json(json),
             ..self
@@ -296,7 +280,7 @@ impl<S> RequestBuilder<S> {
     }
 
     /// Send a query with the request.
-    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder<S> {
+    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.query(query),
             ..self
@@ -304,7 +288,7 @@ impl<S> RequestBuilder<S> {
     }
 
     /// Override the timeout for the request.
-    pub fn timeout(self, timeout: Duration) -> RequestBuilder<S> {
+    pub fn timeout(self, timeout: Duration) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.timeout(timeout),
             ..self
@@ -330,31 +314,12 @@ impl<S> RequestBuilder<S> {
         trace!("Sending HTTP {} request to {}", req.method(), req.url());
         self.client.client.execute(req).await.map_err(Error::from)
     }
-}
 
-impl<S> RequestBuilder<S>
-where
-    S: VersionedService,
-{
-    /// Add an API version to this request.
-    pub fn api_version<A: Into<ApiVersion>>(self, version: A) -> RequestBuilder<S> {
-        let (name, value) = self.service.get_version_header(version.into());
-        RequestBuilder {
-            inner: self.inner.header(name, value),
-            ..self
-        }
+    #[cfg(test)]
+    pub(crate) fn build(self) -> Result<Request, Error> {
+        self.inner.build().map_err(From::from)
     }
 
-    /// Set the API version on the request.
-    pub fn set_api_version<A: Into<ApiVersion>>(&mut self, version: A) {
-        take_mut::take(self, |rb| rb.api_version(version));
-    }
-}
-
-impl<S> RequestBuilder<S>
-where
-    S: Clone,
-{
     /// Send the request and receive JSON in response with pagination.
     ///
     /// Note that the actual requests will happen only on iteration over the results.
@@ -426,54 +391,11 @@ where
     }
 
     /// Attempt to clone this request builder.
-    pub fn try_clone(&self) -> Option<RequestBuilder<S>> {
+    pub fn try_clone(&self) -> Option<RequestBuilder> {
         self.inner.try_clone().map(|inner| RequestBuilder {
             inner,
             client: self.client.clone(),
-            service: self.service.clone(),
         })
-    }
-}
-
-#[cfg(test)]
-mod test_request_builder {
-    use http::Method;
-    use reqwest::{Client, Url};
-
-    use crate::{services, NoAuth};
-
-    use super::AuthenticatedClient;
-
-    #[tokio::test]
-    async fn test_api_version() {
-        let rb = AuthenticatedClient::new(Client::new(), NoAuth::new_without_endpoint())
-            .await
-            .unwrap()
-            .request_service(
-                services::BAREMETAL,
-                Method::GET,
-                Url::parse("http://127.0.0.1").unwrap(),
-            )
-            .api_version((1, 42));
-        let req = rb.inner.build().unwrap();
-        let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
-        assert_eq!(hdr.to_str().unwrap(), "1.42");
-    }
-
-    #[tokio::test]
-    async fn test_set_api_version() {
-        let mut rb = AuthenticatedClient::new(Client::new(), NoAuth::new_without_endpoint())
-            .await
-            .unwrap()
-            .request_service(
-                services::BAREMETAL,
-                Method::GET,
-                Url::parse("http://127.0.0.1").unwrap(),
-            );
-        rb.set_api_version((1, 42));
-        let req = rb.inner.build().unwrap();
-        let hdr = req.headers().get("x-openstack-ironic-api-version").unwrap();
-        assert_eq!(hdr.to_str().unwrap(), "1.42");
     }
 }
 

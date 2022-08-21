@@ -45,15 +45,14 @@ struct Query<T: Serialize> {
     marker: Option<T>,
 }
 
-fn chunks<T, S>(
-    builder: RequestBuilder<S>,
+fn chunks<T>(
+    builder: RequestBuilder,
     limit: Option<usize>,
     starting_with: Option<T::Id>,
 ) -> impl Stream<Item = Result<Vec<T>, Error>>
 where
     T: PaginatedResource + Unpin,
     T::Root: Into<Vec<T>> + Send,
-    S: Clone,
 {
     let mut marker = starting_with;
 
@@ -80,15 +79,14 @@ where
 /// # Panics
 ///
 /// Will panic during iteration if the request builder has a streaming body.
-pub(crate) fn paginated<T, S>(
-    builder: RequestBuilder<S>,
+pub(crate) fn paginated<T>(
+    builder: RequestBuilder,
     limit: Option<usize>,
     starting_with: Option<T::Id>,
 ) -> impl Stream<Item = Result<T, Error>>
 where
     T: PaginatedResource + Unpin,
     T::Root: Into<Vec<T>> + Send,
-    S: Clone,
 {
     try_stream! {
         let iter = chunks(builder, limit, starting_with);

@@ -33,8 +33,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::runtime::{self, Runtime};
 
-use super::client::RequestBuilder;
 use super::services::ServiceType;
+use super::session::ServiceRequestBuilder;
 use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
 /// A result of an OpenStack operation.
@@ -312,7 +312,7 @@ impl SyncSession {
     /// Otherwise the base API version is used. You can use
     /// [pick_api_version](#method.pick_api_version) to choose an API version to use.
     ///
-    /// The result is a `RequestBuilder` that can be customized further. Error checking and response
+    /// The result is a `ServiceRequestBuilder` that can be customized further. Error checking and response
     /// parsing can be done using e.g. [send_checked](#method.send_checked) or
     /// [fetch_json](#method.fetch_json).
     ///
@@ -336,7 +336,7 @@ impl SyncSession {
         service: Srv,
         method: Method,
         path: I,
-    ) -> Result<RequestBuilder<Srv>>
+    ) -> Result<ServiceRequestBuilder<Srv>>
     where
         Srv: ServiceType + Send + Clone,
         I: IntoIterator + Send,
@@ -547,16 +547,20 @@ impl SyncSession {
 
     /// Send the response and convert the response to a JSON.
     #[inline]
-    pub fn fetch_json<T, Srv>(&self, builder: RequestBuilder<Srv>) -> Result<T>
+    pub fn fetch_json<T, Srv>(&self, builder: ServiceRequestBuilder<Srv>) -> Result<T>
     where
         T: DeserializeOwned + Send,
+        Srv: ServiceType,
     {
         self.block_on(async { builder.fetch_json().await })
     }
 
     /// Check the response and convert errors into OpenStack ones.
     #[inline]
-    pub fn send_checked<Srv>(&self, builder: RequestBuilder<Srv>) -> Result<Response> {
+    pub fn send_checked<Srv>(&self, builder: ServiceRequestBuilder<Srv>) -> Result<Response>
+    where
+        Srv: ServiceType,
+    {
         self.block_on(async { builder.send().await })
     }
 
@@ -650,7 +654,7 @@ mod test {
     use futures::stream;
     use reqwest::{Body, Error as HttpError};
 
-    use super::super::session::test;
+    use super::super::session::test_session as test;
     use super::super::{ApiVersion, Error};
     use super::{SyncBody, SyncSession, SyncStream};
 

@@ -19,10 +19,8 @@ use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::services::VersionedService;
-
-use super::client::RequestBuilder;
-use super::services::ServiceType;
+use super::services::{ServiceType, VersionedService};
+use super::session::ServiceRequestBuilder;
 use super::{ApiVersion, AuthType, EndpointFilters, Error, InterfaceType, Session};
 
 /// Adapter for a specific service.
@@ -289,7 +287,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// The `path` argument is a URL path without the service endpoint (e.g. `/servers/1234`).
     ///
-    /// The result is a `RequestBuilder` that can be customized further. Error checking and response
+    /// The result is a `ServiceRequestBuilder` that can be customized further. Error checking and response
     /// parsing can be done using functions from the [request](request/index.html) module.
     ///
     /// ```rust,no_run
@@ -310,7 +308,11 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// This is the most generic call to make a request. You may prefer to use more specific `get`,
     /// `post`, `put` or `delete` calls instead.
-    pub async fn request<I>(&self, method: Method, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn request<I>(
+        &self,
+        method: Method,
+        path: I,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
@@ -333,7 +335,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn get<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn get<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
@@ -390,7 +392,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn post<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn post<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
@@ -404,7 +406,11 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn post_json<I, T>(&self, path: I, body: T) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn post_json<I, T>(
+        &self,
+        path: I,
+        body: T,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
@@ -417,7 +423,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn put<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn put<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
@@ -447,7 +453,11 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the other parameters.
     #[inline]
-    pub async fn put_json<I, T>(&self, path: I, body: T) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn put_json<I, T>(
+        &self,
+        path: I,
+        body: T,
+    ) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
@@ -460,7 +470,7 @@ impl<Srv: ServiceType + Send + Clone> Adapter<Srv> {
     ///
     /// See [request](#method.request) for an explanation of the parameters.
     #[inline]
-    pub async fn delete<I>(&self, path: I) -> Result<RequestBuilder<Srv>, Error>
+    pub async fn delete<I>(&self, path: I) -> Result<ServiceRequestBuilder<Srv>, Error>
     where
         I: IntoIterator + Send,
         I::Item: AsRef<str>,
