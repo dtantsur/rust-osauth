@@ -17,52 +17,57 @@
 use std::fmt::Debug;
 
 use async_stream::try_stream;
+use async_trait::async_trait;
 use futures::pin_mut;
 use futures::stream::{Stream, TryStreamExt};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::client::RequestBuilder;
 use super::Error;
 
 /// A single resource.
 pub trait PaginatedResource {
     /// Type of an ID.
-    type Id: Debug + Serialize;
+    type Id: Debug + Serialize + Send;
 
     /// Root type of the listing.
-    type Root: DeserializeOwned;
+    type Root: DeserializeOwned + Send;
 
     /// Retrieve a copy of the ID.
     fn resource_id(&self) -> Self::Id;
 }
 
+#[async_trait]
+pub(crate) trait FetchNext {
+    async fn fetch_next<Q: Serialize + Send, T: DeserializeOwned + Send>(
+        &self,
+        query: Q,
+    ) -> Result<T, Error>;
+}
+
 #[derive(Serialize)]
-struct Query<T: Serialize> {
+struct Query<T: Serialize + Send> {
     #[serde(skip_serializing_if = "Option::is_none")]
     limit: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     marker: Option<T>,
 }
 
-fn chunks<T>(
-    builder: RequestBuilder,
+fn chunks<F, T>(
+    builder: F,
     limit: Option<usize>,
     starting_with: Option<T::Id>,
 ) -> impl Stream<Item = Result<Vec<T>, Error>>
 where
+    F: FetchNext,
     T: PaginatedResource + Unpin,
-    T::Root: Into<Vec<T>> + Send,
+    T::Root: Into<Vec<T>>,
 {
     let mut marker = starting_with;
 
     try_stream! {
         loop {
-            let prepared = builder
-                .try_clone()
-                .expect("Builder with a streaming body cannot be used")
-                .query(&Query{ limit: limit, marker: marker.take() });
-            let result: T::Root = prepared.fetch_json().await?;
+            let result: T::Root = builder.fetch_next(Query{ limit: limit, marker: marker.take() }).await?;
             let items = result.into();
             if let Some(new_m) = items.last() {
                 marker = Some(new_m.resource_id());
@@ -79,14 +84,15 @@ where
 /// # Panics
 ///
 /// Will panic during iteration if the request builder has a streaming body.
-pub(crate) fn paginated<T>(
-    builder: RequestBuilder,
+pub(crate) fn paginated<F, T>(
+    builder: F,
     limit: Option<usize>,
     starting_with: Option<T::Id>,
 ) -> impl Stream<Item = Result<T, Error>>
 where
+    F: FetchNext,
     T: PaginatedResource + Unpin,
-    T::Root: Into<Vec<T>> + Send,
+    T::Root: Into<Vec<T>>,
 {
     try_stream! {
         let iter = chunks(builder, limit, starting_with);

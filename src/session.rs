@@ -19,6 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(feature = "stream")]
+use async_trait::async_trait;
+#[cfg(feature = "stream")]
 use futures::Stream;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::Error as HttpError;
@@ -35,7 +37,7 @@ use super::services::{ServiceType, VersionedService};
 use super::{Adapter, ApiVersion, AuthType, EndpointFilters, Error, InterfaceType};
 
 #[cfg(feature = "stream")]
-use super::stream::PaginatedResource;
+use super::stream::{paginated, FetchNext, PaginatedResource};
 
 /// An OpenStack API session.
 ///
@@ -830,10 +832,11 @@ where
         starting_with: Option<<T as PaginatedResource>::Id>,
     ) -> impl Stream<Item = Result<T, Error>>
     where
+        S: Send + Sync,
         T: PaginatedResource + Unpin,
         <T as PaginatedResource>::Root: Into<Vec<T>> + Send,
     {
-        self.inner.fetch_json_paginated(limit, starting_with).await
+        paginated(self, limit, starting_with)
     }
 
     /// Attempt to clone this request builder.
@@ -842,6 +845,21 @@ where
             inner,
             service: self.service.clone(),
         })
+    }
+}
+
+#[cfg(feature = "stream")]
+#[async_trait]
+impl<S: ServiceType + Clone + Send + Sync> FetchNext for ServiceRequestBuilder<S> {
+    async fn fetch_next<Q: Serialize + Send, T: DeserializeOwned + Send>(
+        &self,
+        query: Q,
+    ) -> Result<T, Error> {
+        let prepared = self
+            .try_clone()
+            .expect("Builder with a streaming body cannot be used")
+            .query(&query);
+        prepared.fetch_json().await
     }
 }
 

@@ -20,6 +20,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(feature = "stream")]
+use async_trait::async_trait;
+#[cfg(feature = "stream")]
 use futures::Stream;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::Error as HttpError;
@@ -30,9 +32,9 @@ use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
 
 #[cfg(feature = "stream")]
-use super::stream::paginated;
-#[cfg(feature = "stream")]
 pub use super::stream::PaginatedResource;
+#[cfg(feature = "stream")]
+use super::stream::{paginated, FetchNext};
 use super::{AuthType, EndpointFilters, Error};
 
 /// A properly typed constant for use with root paths.
@@ -396,6 +398,21 @@ impl RequestBuilder {
             inner,
             client: self.client.clone(),
         })
+    }
+}
+
+#[cfg(feature = "stream")]
+#[async_trait]
+impl FetchNext for RequestBuilder {
+    async fn fetch_next<Q: Serialize + Send, T: DeserializeOwned + Send>(
+        &self,
+        query: Q,
+    ) -> Result<T, Error> {
+        let prepared = self
+            .try_clone()
+            .expect("Builder with a streaming body cannot be used")
+            .query(&query);
+        prepared.fetch_json().await
     }
 }
 
