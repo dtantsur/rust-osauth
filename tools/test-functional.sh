@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eux
+set -eux -o pipefail
 
 LOG_DIR=${LOG_DIR:-/tmp/devstack-logs}
 mkdir -p "$LOG_DIR/examples"
@@ -12,7 +12,7 @@ OS_CLOUD=devstack-admin openstack flavor create test-flavor \
 
 export OS_CLOUD=devstack
 export RUST_BACKTRACE=1
-export RUST_LOG=osauth,osproto,reqwest,hyper
+export RUST_LOG=osauth,reqwest,hyper
 
 FAILED=
 set +ex
@@ -21,7 +21,9 @@ echo "******************************"
 for example in $EXAMPLES; do
     echo "Running example $example..."
     cargo run --example $example 2>&1 | tee "$LOG_DIR/examples/$example.log"
-    if [[ $? != 0 ]]; then
+    CODE=$?
+    if [[ $CODE != 0 ]]; then
+        echo "ERROR: Example $example failed with code $CODE"
         FAILED+="$example "
     fi
     echo "******************************"
