@@ -132,3 +132,7 @@ pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces
 pub use crate::error::{Error, ErrorKind};
 pub use crate::loading::CloudConfig;
 pub use crate::session::{ServiceRequestBuilder, Session};
+#[cfg(feature = "stream")]
+pub use crate::stream::PaginatedResource;
+#[cfg(feature = "stream")]
+pub use osauth_derive::PaginatedResource;

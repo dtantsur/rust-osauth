@@ -729,32 +729,14 @@ where
     /// use futures::pin_mut;
     /// use futures::stream::TryStreamExt;
     /// use serde::Deserialize;
+    /// use osauth::PaginatedResource;
     ///
-    /// #[derive(Debug, Deserialize)]
+    /// #[derive(Debug, Deserialize, PaginatedResource)]
+    /// #[collection_name = "servers"]
     /// pub struct Server {
+    ///     #[resource_id]
     ///     pub id: String,
     ///     pub name: String,
-    /// }
-    ///
-    /// #[derive(Debug, Deserialize)]
-    /// pub struct ServersRoot {
-    ///     pub servers: Vec<Server>,
-    /// }
-    ///
-    /// // This implementatin defines the relationship between the root resource and its items.
-    /// impl osauth::client::PaginatedResource for Server {
-    ///     type Id = String;
-    ///     type Root = ServersRoot;
-    ///     fn resource_id(&self) -> Self::Id {
-    ///         self.id.clone()
-    ///     }
-    /// }
-    ///
-    /// // This is another required part of the pagination contract.
-    /// impl From<ServersRoot> for Vec<Server> {
-    ///     fn from(value: ServersRoot) -> Vec<Server> {
-    ///         value.servers
-    ///     }
     /// }
     ///
     /// let session = osauth::Session::from_env().await?;

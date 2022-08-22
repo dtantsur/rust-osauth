@@ -26,6 +26,11 @@ use serde::Serialize;
 use super::Error;
 
 /// A single resource.
+///
+/// This trait can normally be derived. You need to add a `#[resource_id]` attribute to the field
+/// that serves as a pagination marker. You may also need to add a
+/// `#[collection_name = "resources"]` attribute to the structure which a name of the field that
+/// is returned in the collection (e.g. "servers" for Compute servers).
 pub trait PaginatedResource {
     /// Type of an ID.
     type Id: Debug + Serialize + Send;
