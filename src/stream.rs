@@ -27,10 +27,44 @@ use super::Error;
 
 /// A single resource.
 ///
-/// This trait can normally be derived. You need to add a `#[resource_id]` attribute to the field
-/// that serves as a pagination marker. You may also need to add a
-/// `#[collection_name = "resources"]` attribute to the structure which a name of the field that
-/// is returned in the collection (e.g. "servers" for Compute servers).
+/// This trait can normally be derived. You need to
+///
+/// * add a `#[resource_id]` attribute to the field that serves as a pagination marker
+/// * add a `#[collection_name = "resources"]` attribute to the structure with a name of
+///   the field that is returned in the collection (e.g. "servers" for Compute servers).
+///
+/// The trait and its dependencies can be implemented manually like this:
+///
+/// ```rust,no_run
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize)]
+/// pub struct Server {
+///     pub id: String,
+///     pub name: String,
+/// }
+///
+/// #[derive(Debug, Deserialize)]
+/// pub struct ServersRoot {
+///     pub servers: Vec<Server>,  // equivalent of #[collection_name = "servers"]
+/// }
+///
+/// // This implementatin defines the relationship between the root resource and its items.
+/// impl osauth::PaginatedResource for Server {
+///     type Id = String;
+///     type Root = ServersRoot;
+///     fn resource_id(&self) -> Self::Id {
+///         self.id.clone()  // equivalent of #[resource_id] on the `id` field
+///     }
+/// }
+///
+/// // This is another required part of the pagination contract.
+/// impl From<ServersRoot> for Vec<Server> {
+///     fn from(value: ServersRoot) -> Vec<Server> {
+///         value.servers
+///     }
+/// }
+/// ```
 pub trait PaginatedResource {
     /// Type of an ID.
     type Id: Debug + Serialize + Send;

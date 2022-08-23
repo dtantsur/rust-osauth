@@ -515,7 +515,10 @@ impl Session {
     /// # async fn main() { example().await.unwrap(); }
     /// ```
     ///
-    /// See [request](#method.request) for an explanation of the parameters.
+    /// See [`Session::request`] for an explanation of the parameters.
+    ///
+    /// Note that this call does not handle pagination. Use [`Session::get`] in combination
+    /// with [`ServiceRequestBuilder::fetch_paginated`] instead.
     #[inline]
     pub async fn get_json<Srv, I, T>(&self, service: Srv, path: I) -> Result<T, Error>
     where
@@ -724,6 +727,9 @@ where
     ///
     /// Note that the actual requests will happen only on iteration over the results.
     ///
+    /// To use this feature, you need to implement [`PaginatedResource`] for your resource
+    /// class. This can be done with `derive`:
+    ///
     /// ```rust,no_run
     /// # async fn example() -> Result<(), osauth::Error> {
     /// use futures::pin_mut;
@@ -754,6 +760,8 @@ where
     /// # #[tokio::main]
     /// # async fn main() { example().await.unwrap(); }
     /// ```
+    ///
+    /// See [`PaginatedResource`] for more information on how to implement it.
     ///
     /// # Panics
     ///

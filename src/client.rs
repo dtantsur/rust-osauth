@@ -338,42 +338,14 @@ impl RequestBuilder {
 
     /// Send the request and receive JSON in response with pagination.
     ///
-    /// Note that the actual requests will happen only on iteration over the results.
-    ///
-    /// ```rust,no_run
-    /// # async fn example() -> Result<(), osauth::Error> {
-    /// use futures::pin_mut;
-    /// use futures::stream::TryStreamExt;
-    /// use serde::Deserialize;
-    /// use osauth::PaginatedResource;
-    ///
-    /// #[derive(Debug, Deserialize, PaginatedResource)]
-    /// #[collection_name = "servers"]
-    /// pub struct Server {
-    ///     #[resource_id]
-    ///     pub id: String,
-    ///     pub name: String,
-    /// }
-    ///
-    /// let session = osauth::Session::from_env().await?;
-    ///
-    /// let servers = session
-    ///     .get(osauth::services::COMPUTE, &["servers"])
-    ///     .fetch_paginated::<Server>(None, None)
-    ///     .await;
-    ///
-    /// pin_mut!(servers);
-    /// while let Some(srv) = servers.try_next().await? {
-    ///     println!("ID = {}, Name = {}", srv.id, srv.name);
-    /// }
-    /// # Ok(()) }
-    /// # #[tokio::main]
-    /// # async fn main() { example().await.unwrap(); }
-    /// ```
+    /// See [`ServiceRequestBuilder::fetch_paginated`] for explanation of parameters
+    /// and a real world example.
     ///
     /// # Panics
     ///
     /// Will panic during iteration if the request builder has a streaming body.
+    ///
+    /// [`ServiceRequestBuilder::fetch_paginated`]: crate::ServiceRequestBuilder::fetch_paginated
     #[cfg(feature = "stream")]
     pub async fn fetch_paginated<T>(
         self,
