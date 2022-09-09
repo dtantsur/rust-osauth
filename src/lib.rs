@@ -116,6 +116,7 @@ mod endpointfilters;
 mod error;
 pub mod identity;
 mod loading;
+mod macros;
 mod protocol;
 pub mod services;
 mod session;

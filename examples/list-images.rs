@@ -14,15 +14,30 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
-pub struct Server {
-    pub id: String,
-    pub name: String,
+osauth::protocol_enum! {
+    #[doc = "Possible image statuses."]
+    #[non_exhaustive]
+    enum ImageStatus = Unknown {
+        Queued = "queued",
+        Saving = "saving",
+        Active = "active",
+        Killed = "killed",
+        Deleted = "deleted",
+        Deactivated = "deactivated",
+        Unknown = "unknown"
+    }
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ServersRoot {
-    pub servers: Vec<Server>,
+pub struct Image {
+    pub id: String,
+    pub name: String,
+    pub status: ImageStatus,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImagesRoot {
+    pub images: Vec<Image>,
 }
 
 #[tokio::main]
@@ -32,12 +47,12 @@ async fn main() {
         .await
         .expect("Failed to create an identity provider from the environment");
 
-    let servers: ServersRoot = session
-        .get_json(osauth::services::COMPUTE, &["servers"])
+    let images: ImagesRoot = session
+        .get_json(osauth::services::IMAGE, &["images"])
         .await
-        .expect("Failed to list servers");
-    for srv in servers.servers {
-        println!("ID = {}, Name = {}", srv.id, srv.name);
+        .expect("Failed to list images");
+    for srv in images.images {
+        println!("Name = {}, Status = {}", srv.name, srv.status);
     }
     println!("Done listing");
 }
