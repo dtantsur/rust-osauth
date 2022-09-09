@@ -1,5 +1,52 @@
 # Change Log
 
+## 0.4.0 (2022-09-09)
+
+This is one of the most significant releases in the project's history. Major
+changes have been done to all parts of the public API. Please see breaking
+changes and check the updated documentation for details.
+
+#### Breaking Changes
+
+*   start requests synchronously, authenticate later
+    ([81b45f0d](https://github.com/dtantsur/rust-osauth/commit/81b45f0d337ce03f3afe57679315d28b89e8520e))
+    and
+    ([4e6196c2](https://github.com/dtantsur/rust-osauth/commit/4e6196c23387a640e1f51b191364f3be337d1185))
+*   removed `_json` suffixes from some calls
+    ([1d6dcc25](https://github.com/dtantsur/rust-osauth/commit/1d6dcc25884d843985db91a21524deb851fdb1c0))
+*   `Identity` trait removed ([77874cca](https://github.com/dtantsur/rust-osauth/commit/77874cca0e2ecd401a9fda620e5d2485aee0157c))
+*   add AuthenticatedClient and move Client handling to Session ([85edca2e](https://github.com/dtantsur/rust-osauth/commit/85edca2e10c7b819f7afad47e8549688855e98c7))
+*   remove dependency on osproto ([42662a96](https://github.com/dtantsur/rust-osauth/commit/42662a96037bc7a65c4f40702ebb29623ca77965))
+*   MSRV is now 1.58.0
+* **auth:**  make get_endpoint synchronous ([16a1d94b](https://github.com/dtantsur/rust-osauth/commit/16a1d94b32da3c931905d163ec9a1bbfcdd3cf11))
+
+#### Features
+
+*   add protocol_enum macro ([3b5d596a](https://github.com/dtantsur/rust-osauth/commit/3b5d596a609f68cb540da5b0bc44b0c4e16e81b1))
+*   add osauth-derive crate ([c8ad553e](https://github.com/dtantsur/rust-osauth/commit/c8ad553e3b17b9fbe99b72f6365908e94b89d1ac))
+*   rename fetch_json -> fetch ([1d6dcc25](https://github.com/dtantsur/rust-osauth/commit/1d6dcc25884d843985db91a21524deb851fdb1c0), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+*   simplify requests to avoid immediate await? ([4e6196c2](https://github.com/dtantsur/rust-osauth/commit/4e6196c23387a640e1f51b191364f3be337d1185))
+*   support legacy ironic error messages ([589f6887](https://github.com/dtantsur/rust-osauth/commit/589f6887091381f727c27cc78b25eb3c81a4fb57))
+*   type-safe setting of API version on RequestBuilder ([4d4cd320](https://github.com/dtantsur/rust-osauth/commit/4d4cd320eba32da4981d62589f1defeeab60ec0b))
+*   start requests synchronously, authenticate later ([81b45f0d](https://github.com/dtantsur/rust-osauth/commit/81b45f0d337ce03f3afe57679315d28b89e8520e), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+*   new CloudConfig object ([a3642339](https://github.com/dtantsur/rust-osauth/commit/a3642339e477053f9f30573a69c420f913f2978d))
+*   add AuthenticatedClient and move Client handling to Session ([85edca2e](https://github.com/dtantsur/rust-osauth/commit/85edca2e10c7b819f7afad47e8549688855e98c7), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+*   remove dependency on osproto ([42662a96](https://github.com/dtantsur/rust-osauth/commit/42662a96037bc7a65c4f40702ebb29623ca77965), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+*   remove deprecated set_region, from_config, from_env ([d82333ce](https://github.com/dtantsur/rust-osauth/commit/d82333ce4cdbf75f3e5be2ee697c480a038d8926))
+*   update reqwest to 0.11 and tokio to 1.0 ([7018ffef](https://github.com/dtantsur/rust-osauth/commit/7018ffef1bd91c396b28695ec3a92a43824749e2))
+* **auth:**  make get_endpoint synchronous ([16a1d94b](https://github.com/dtantsur/rust-osauth/commit/16a1d94b32da3c931905d163ec9a1bbfcdd3cf11), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+* **session:**
+  *  separate ServiceRequestBuilder for service requests ([462e2469](https://github.com/dtantsur/rust-osauth/commit/462e24692ceca266fe7516d1db7e5801e9820362))
+  *  Session/Adapter creation is now asynchronous ([8f8ab65c](https://github.com/dtantsur/rust-osauth/commit/8f8ab65c3234bbc823c43a5f2d713bcd22e026d2))
+
+#### Bug Fixes
+
+*   fix SyncStream with newer Rust and bump MSRV to 1.50.0 ([912ac46f](https://github.com/dtantsur/rust-osauth/commit/912ac46fbdecb3018ec810133ca63cf81f0fd253))
+*   bump MSRV to 1.46.0 because of socket2 ([4fa7dbc2](https://github.com/dtantsur/rust-osauth/commit/4fa7dbc220a4b38e94459f00d7b2277ec90e78b7))
+*   stop requiring an owned value of auth_url/endpoint ([e6e50080](https://github.com/dtantsur/rust-osauth/commit/e6e500801769de741e7791a7e44ef8f0720b9045))
+*   reduce the size of Password/Token from 416 to 304 bytes ([77874cca](https://github.com/dtantsur/rust-osauth/commit/77874cca0e2ecd401a9fda620e5d2485aee0157c), breaks [#](https://github.com/dtantsur/rust-osauth/issues/))
+* **auth:**  don't require owned params in get_endpoint ([1e8cb795](https://github.com/dtantsur/rust-osauth/commit/1e8cb79595f26c6382393f3d7be458c540b8fde2))
+
 ## 0.3.4 (2021-01-16)
 
 #### Bug Fixes

@@ -71,7 +71,7 @@
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]
-#![doc(html_root_url = "https://docs.rs/osauth/0.3.4")]
+#![doc(html_root_url = "https://docs.rs/osauth/0.4.0")]
 // NOTE: we do not use generic deny(warnings) to avoid breakages with new
 // versions of the compiler. Add more warnings here as you discover them.
 // Taken from https://github.com/rust-unofficial/patterns/
