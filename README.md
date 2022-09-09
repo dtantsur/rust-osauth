@@ -18,7 +18,7 @@ OpenStack releases starting with Train are officially supported, although
 support for releases older than 1.5 years is best-effort and may be dropped
 without a prior warning (it will not be considered a breaking change).
 
-For a more high-level (yet synchronous) API see
+For a more high-level API see
 [rust-openstack](https://crates.io/crates/openstack).
 
 Similarly to OpenStack itself, this project is licensed under Apache-2.0.
