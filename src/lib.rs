@@ -121,7 +121,7 @@ mod protocol;
 pub mod services;
 mod session;
 #[cfg(feature = "stream")]
-mod stream;
+pub mod stream;
 mod url;
 mod utils;
 
