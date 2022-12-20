@@ -170,13 +170,13 @@ mod test {
     }
 
     #[test]
-    fn test_merge_with_percent_encoding() {
-        let mut dest = Url::parse("http://compute/path%2Fto%2Ffoo%20bar").unwrap();
+    fn test_merge_with_percent_encoded_segments() {
+        let mut dest = Url::parse("http://compute/path%2Fto/foo%20bar").unwrap();
         let src = Url::parse("https://example.com:5050/compute/").unwrap();
         merge(&mut dest, &src);
         assert_eq!(
             dest.as_str(),
-            "https://example.com:5050/compute/path%2Fto%2Ffoo%20bar"
+            "https://example.com:5050/compute/path%2Fto/foo%20bar"
         );
     }
 }
