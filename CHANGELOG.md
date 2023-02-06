@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.4.1 (2023-02-06)
+
+#### Bug Fixes
+
+*   fix double percent-encoding on URLs (#69) ([7ae67476](https://github.com/dtantsur/rust-openstack/commit/7ae674768b1dba659a4f32b6843c2f3d47101253))
+
 ## 0.4.0 (2022-09-09)
 
 This is one of the most significant releases in the project's history. Major
