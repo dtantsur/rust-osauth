@@ -458,7 +458,7 @@ impl Session {
         path: I,
     ) -> ServiceRequestBuilder<Srv>
     where
-        Srv: ServiceType + Send + Clone,
+        Srv: ServiceType + Send,
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
@@ -471,7 +471,7 @@ impl Session {
         ServiceRequestBuilder {
             inner: self.client.request(method, url_with_path),
             endpoint_cache: self.endpoint_cache.clone(),
-            service: service.clone(),
+            service,
         }
     }
 
@@ -805,12 +805,12 @@ impl<S: ServiceType + Clone + Send + Sync> FetchNext for ServiceRequestBuilder<S
     }
 }
 
-impl<S> Into<RequestBuilder> for ServiceRequestBuilder<S>
+impl<S> From<ServiceRequestBuilder<S>> for RequestBuilder
 where
     S: ServiceType,
 {
-    fn into(self: ServiceRequestBuilder<S>) -> RequestBuilder {
-        self.inner
+    fn from(value: ServiceRequestBuilder<S>) -> RequestBuilder {
+        value.inner
     }
 }
 

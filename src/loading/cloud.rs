@@ -114,12 +114,12 @@ impl Auth {
             self.password,
             "HTTP basic authentication requires a password",
         )?;
-        BasicAuth::new(&endpoint, username, password)
+        BasicAuth::new(endpoint, username, password)
     }
 
     fn create_none_auth(self) -> Result<NoAuth, Error> {
         if let Some(endpoint) = self.endpoint {
-            NoAuth::new(&endpoint)
+            NoAuth::new(endpoint)
         } else {
             Ok(NoAuth::new_without_endpoint())
         }
@@ -135,7 +135,7 @@ impl Auth {
         let user_domain = self
             .user_domain_name
             .unwrap_or_else(|| String::from("Default"));
-        let mut id = Password::new(&auth_url, username, password, user_domain)?;
+        let mut id = Password::new(auth_url, username, password, user_domain)?;
 
         if let Some(scope) = project_scope(
             self.project_id,
@@ -155,7 +155,7 @@ impl Auth {
             "Token authentication requires an authentication URL",
         )?;
         let token = require(self.token, "Token authentication requires a token")?;
-        let mut id = Token::new(&auth_url, token)?;
+        let mut id = Token::new(auth_url, token)?;
 
         if let Some(scope) = project_scope(
             self.project_id,
@@ -229,7 +229,7 @@ impl CloudConfig {
                     })?;
                     let _ = result.insert(service_type.to_string(), url.clone());
                     // Handle types like baremetal-introspection
-                    let with_dashes = service_type.replace("_", "-");
+                    let with_dashes = service_type.replace('_', "-");
                     let _ = result.insert(with_dashes, url);
                 } else {
                     return Err(Error::new(

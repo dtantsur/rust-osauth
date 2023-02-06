@@ -77,7 +77,6 @@
 // Taken from https://github.com/rust-unofficial/patterns/
 #![deny(
     bare_trait_objects,
-    const_err,
     dead_code,
     improper_ctypes,
     missing_copy_implementations,
