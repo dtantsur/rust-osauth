@@ -53,7 +53,15 @@ pub fn merge(dest: &mut Url, src: &Url) {
     dest.set_scheme(src.scheme()).unwrap();
     dest.set_host(src.host_str()).unwrap();
     dest.set_port(src.port()).unwrap();
-    let existing: Vec<String> = dest.path_segments().unwrap().map(str::to_string).collect();
+    let existing: Vec<String> = dest
+        .path_segments()
+        .unwrap()
+        .map(|segment| {
+            percent_encoding::percent_decode_str(segment)
+                .decode_utf8_lossy()
+                .into_owned()
+        })
+        .collect();
     dest.path_segments_mut()
         .unwrap()
         .clear()
@@ -158,6 +166,17 @@ mod test {
         assert_eq!(
             dest.as_str(),
             "https://example.com:5050/compute/path/1/?foo=bar,answer=42"
+        );
+    }
+
+    #[test]
+    fn test_merge_with_percent_encoded_segments() {
+        let mut dest = Url::parse("http://compute/path%2Fto/foo%20bar").unwrap();
+        let src = Url::parse("https://example.com:5050/compute/").unwrap();
+        merge(&mut dest, &src);
+        assert_eq!(
+            dest.as_str(),
+            "https://example.com:5050/compute/path%2Fto/foo%20bar"
         );
     }
 }
