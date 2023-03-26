@@ -168,7 +168,7 @@ impl Ord for Version {
     }
 }
 
-/// Deserialize a value where empty string is replaced by `Default` value.
+/// Deserialize a value where an empty string is replaced by `Default` value.
 pub fn empty_as_default<'de, D, T>(des: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
@@ -177,6 +177,19 @@ where
     let value = Value::deserialize(des)?;
     match value {
         Value::String(ref s) if s.is_empty() => Ok(T::default()),
+        _ => serde_json::from_value(value).map_err(D::Error::custom),
+    }
+}
+
+/// Deserialize a value where an empty map is replaced by `Default` value.
+pub fn empty_map_as_default<'de, D, T>(des: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned + Default,
+{
+    let value = Value::deserialize(des)?;
+    match value {
+        Value::Object(ref s) if s.is_empty() => Ok(T::default()),
         _ => serde_json::from_value(value).map_err(D::Error::custom),
     }
 }
@@ -324,5 +337,40 @@ pub mod test {
             serde_json::from_str::<VersionStatus>("\"SUPPORTED\"").unwrap(),
             VersionStatus::Supported
         );
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestStruct {
+        pub answer: u8,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestDeserialize {
+        #[serde(deserialize_with = "empty_map_as_default")]
+        non_empty_map: Option<TestStruct>,
+        #[serde(deserialize_with = "empty_map_as_default")]
+        empty_map_as_none: Option<TestStruct>,
+        #[serde(deserialize_with = "empty_map_as_default")]
+        empty_map_as_none_is_null: Option<TestStruct>,
+        #[serde(default, deserialize_with = "empty_map_as_default")]
+        empty_map_as_none_with_default: Option<TestStruct>,
+        #[serde(deserialize_with = "empty_as_default")]
+        empty_string_as_none: Option<TestStruct>,
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let json = r#"{
+            "empty_map_as_none": {},
+            "non_empty_map": {"answer": 42},
+            "empty_map_as_none_is_null": null,
+            "empty_string_as_none": ""
+        }"#;
+        let result: TestDeserialize = serde_json::from_str(json).unwrap();
+        assert_eq!(result.non_empty_map.unwrap().answer, 42);
+        assert!(result.empty_map_as_none.is_none());
+        assert!(result.empty_map_as_none_is_null.is_none());
+        assert!(result.empty_map_as_none_with_default.is_none());
+        assert!(result.empty_string_as_none.is_none());
     }
 }
