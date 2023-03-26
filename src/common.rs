@@ -186,11 +186,11 @@ pub mod test {
     use serde::{Deserialize, Serialize};
     use serde_json;
 
-    use super::{empty_as_default, Version, VersionStatus};
+    use super::*;
     use crate::ApiVersion;
 
     pub fn compare<T: Serialize>(sample: &str, value: T) {
-        let converted: serde_json::Value = serde_json::from_str(sample).unwrap();
+        let converted: Value = serde_json::from_str(sample).unwrap();
         let result = serde_json::to_value(value).unwrap();
         assert_eq!(result, converted);
     }

@@ -653,6 +653,44 @@ where
     }
 
     /// Send a query with the request.
+    ///
+    /// [Query](struct.Query.html) objects can be used for type-safe querying without creating
+    /// a potentially large structure with all possible filters:
+    ///
+    /// ```rust,no_run
+    /// use std::borrow::Cow;
+    ///
+    /// #[derive(Debug)]
+    /// enum NodeFilter {
+    ///     Associated(bool),
+    ///     ResourceClass(String),
+    ///     Limit(usize),
+    ///     // ... a lot of items here ...
+    /// }
+    ///
+    /// impl osauth::QueryItem for NodeFilter {
+    ///     fn query_item(&self) -> Result<(&str, Cow<str>), osauth::Error> {
+    ///         Ok(match self {
+    ///             NodeFilter::Associated(a) => ("associated", a.to_string().into()),
+    ///             NodeFilter::ResourceClass(s) => ("resource_class", s.into()),
+    ///             NodeFilter::Limit(l) => ("limit", l.to_string().into()),
+    ///         })
+    ///     }
+    /// }
+    ///
+    /// # async fn example() -> Result<(), osauth::Error> {
+    /// let session = osauth::Session::from_env().await?;
+    /// let query = osauth::Query::default()
+    ///     .with(NodeFilter::Associated(true))
+    ///     .with(NodeFilter::ResourceClass("x1.large".into()))
+    ///     .with(NodeFilter::Limit(100));
+    /// let request = session
+    ///     .get(osauth::services::BAREMETAL, &["nodes"])
+    ///     .query(&query);
+    /// # Ok(()) }
+    /// # #[tokio::main]
+    /// # async fn main() { example().await.unwrap(); }
+    /// ```
     pub fn query<T: Serialize + ?Sized>(self, query: &T) -> ServiceRequestBuilder<S> {
         ServiceRequestBuilder {
             inner: self.inner.query(query),

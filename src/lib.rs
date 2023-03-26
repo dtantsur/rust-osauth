@@ -117,6 +117,7 @@ pub mod identity;
 mod loading;
 mod macros;
 mod protocol;
+mod query;
 pub mod services;
 mod session;
 #[cfg(feature = "stream")]
@@ -131,6 +132,7 @@ pub use crate::basic::BasicAuth;
 pub use crate::endpointfilters::{EndpointFilters, InterfaceType, ValidInterfaces};
 pub use crate::error::{Error, ErrorKind};
 pub use crate::loading::CloudConfig;
+pub use crate::query::{Query, QueryItem};
 pub use crate::session::{ServiceRequestBuilder, Session};
 #[cfg(feature = "stream")]
 pub use crate::stream::PaginatedResource;

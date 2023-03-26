@@ -288,6 +288,8 @@ impl RequestBuilder {
     }
 
     /// Send a query with the request.
+    ///
+    /// See also: [Query](../struct.Query.html).
     pub fn query<T: Serialize + ?Sized>(self, query: &T) -> RequestBuilder {
         RequestBuilder {
             inner: self.inner.query(query),
