@@ -17,6 +17,13 @@ struct RenamedResource {
     pub id: String,
 }
 
+#[derive(Debug, Deserialize, PaginatedResource)]
+#[flat_collection]
+struct FlatResource {
+    #[resource_id]
+    pub id: String,
+}
+
 #[test]
 fn test_simple_derive() {
     use osauth::PaginatedResource;
@@ -51,4 +58,20 @@ fn test_renamed_collection() {
     let resources: <RenamedResource as PaginatedResource>::Root =
         serde_json::from_str(json).unwrap();
     assert_eq!(resources.items.len(), 2);
+}
+
+#[test]
+fn test_flat_collection() {
+    use osauth::PaginatedResource;
+
+    let res = FlatResource {
+        id: "the id".into(),
+    };
+
+    let res_id: String = res.resource_id();
+    assert_eq!(&res_id, "the id");
+
+    let json = r#"[{"id": "1"}, {"id": "2"}]"#;
+    let resources: <FlatResource as PaginatedResource>::Root = serde_json::from_str(json).unwrap();
+    assert_eq!(resources.len(), 2);
 }

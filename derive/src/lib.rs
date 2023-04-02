@@ -4,39 +4,57 @@ use proc_macro2::Span;
 use quote::quote;
 use syn;
 
-#[proc_macro_derive(PaginatedResource, attributes(resource_id, collection_name))]
+#[proc_macro_derive(
+    PaginatedResource,
+    attributes(resource_id, collection_name, flat_collection)
+)]
 pub fn paginated_resource_macro_derive(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
     let class_name = &input.ident;
     let vis = &input.vis;
-    let collection_name = syn::Ident::new(&get_collection_name(&input), Span::call_site());
-    let collection_class_name = syn::Ident::new(
-        &format!("{}DerivedOSResourceCollection", class_name),
-        Span::call_site(),
-    );
+    let maybe_collection_name = get_collection_name(&input);
     let (id_name, id_type) = get_id_field(&input.data);
 
-    quote! {
-        #[derive(Debug, ::serde::Deserialize)]
-        #[allow(missing_docs, unused)]
-        #vis struct #collection_class_name {
-            #collection_name: Vec<#class_name>,
-        }
+    if let Some(collection_name) = maybe_collection_name {
+        let collection_ident = syn::Ident::new(&collection_name, Span::call_site());
+        let collection_class_name = syn::Ident::new(
+            &format!("{}DerivedOSResourceCollection", class_name),
+            Span::call_site(),
+        );
 
-        #[allow(missing_docs, unused)]
-        impl ::osauth::PaginatedResource for #class_name {
-            type Id = #id_type;
-            type Root = #collection_class_name;
-            fn resource_id(&self) -> Self::Id {
-                self.#id_name.clone()
+        quote! {
+            #[derive(Debug, ::serde::Deserialize)]
+            #[allow(missing_docs, unused)]
+            #vis struct #collection_class_name {
+                #collection_ident: Vec<#class_name>,
+            }
+
+            #[allow(missing_docs, unused)]
+            impl ::osauth::PaginatedResource for #class_name {
+                type Id = #id_type;
+                type Root = #collection_class_name;
+                fn resource_id(&self) -> Self::Id {
+                    self.#id_name.clone()
+                }
+            }
+
+            #[allow(missing_docs, unused)]
+            impl From<#collection_class_name> for Vec<#class_name> {
+                fn from(value: #collection_class_name) -> Vec<#class_name> {
+                    value.#collection_ident
+                }
             }
         }
-
-        #[allow(missing_docs, unused)]
-        impl From<#collection_class_name> for Vec<#class_name> {
-            fn from(value: #collection_class_name) -> Vec<#class_name> {
-                value.#collection_name
+    } else {
+        quote! {
+            #[allow(missing_docs, unused)]
+            impl ::osauth::PaginatedResource for #class_name {
+                type Id = #id_type;
+                type Root = Vec<#class_name>;
+                fn resource_id(&self) -> Self::Id {
+                    self.#id_name.clone()
+                }
             }
         }
     }
@@ -68,22 +86,42 @@ fn get_id_field(data: &syn::Data) -> (&syn::Ident, &syn::Type) {
     panic!("#[resource_id] missing");
 }
 
-fn get_collection_name(input: &syn::DeriveInput) -> String {
+fn get_collection_name(input: &syn::DeriveInput) -> Option<String> {
+    let mut flat = false;
+    let mut maybe_name = None;
     for attr in &input.attrs {
-        if let Ok(syn::Meta::NameValue(nv)) = attr.parse_meta() {
-            if nv.path.is_ident("collection_name") {
+        match attr.parse_meta() {
+            Ok(syn::Meta::NameValue(nv)) if nv.path.is_ident("collection_name") => {
+                if flat {
+                    panic!("collection_name and flat_collection cannot be used together");
+                }
                 match nv.lit {
-                    syn::Lit::Str(s) => return s.value(),
+                    syn::Lit::Str(s) => maybe_name = Some(s.value()),
                     _ => panic!("collection_name must be a string"),
                 }
             }
+            Ok(syn::Meta::Path(p)) if p.is_ident("flat_collection") => {
+                if maybe_name.is_some() {
+                    panic!("collection_name and flat_collection cannot be used together");
+                }
+                flat = true;
+            }
+            _ => {}
         }
     }
 
-    let ident = input.ident.to_string().to_case(Case::Snake);
-    if ident.chars().last().expect("empty collection_name") == 's' {
-        format!("{}es", ident)
+    if flat {
+        None
     } else {
-        format!("{}s", ident)
+        maybe_name.or_else(|| {
+            let ident = input.ident.to_string().to_case(Case::Snake);
+            Some(
+                if ident.chars().last().expect("empty collection_name") == 's' {
+                    format!("{}es", ident)
+                } else {
+                    format!("{}s", ident)
+                },
+            )
+        })
     }
 }
