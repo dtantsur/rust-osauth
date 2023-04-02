@@ -1,5 +1,18 @@
 # Change Log
 
+## 0.4.2 (2023-04-02)
+
+#### Bug Fixes
+
+* **derive:**  use `snake_case` for the default of `collection_name` ([2b0067c1](https://github.com/dtantsur/rust-openstack/commit/2b0067c1efa6fb485683a39b6069783969aa9ca0))
+
+#### Features
+
+* **common:**
+  *  add `empty_map_as_default` ([ec85e964](https://github.com/dtantsur/rust-openstack/commit/ec85e96479c95045738671e44cc480ac3c7b8abd))
+  *  add Query for more efficient queries ([e7d0fdb0](https://github.com/dtantsur/rust-openstack/commit/e7d0fdb0cad9c176fdfe24dd51f22e2b04525bc8))
+* **derive:**  add support for `flat_collection` ([51a2ccae](https://github.com/dtantsur/rust-openstack/commit/51a2ccaeff1ce7b8e7cc77e6bf9ce56a2513afe7))
+
 ## 0.4.1 (2023-02-06)
 
 #### Bug Fixes

@@ -32,6 +32,21 @@ use super::Error;
 /// * add a `#[resource_id]` attribute to the field that serves as a pagination marker
 /// * add a `#[collection_name = "resources"]` attribute to the structure with a name of
 ///   the field that is returned in the collection (e.g. "servers" for Compute servers).
+/// * add a `#[flat_collection]` attribute to the structure if the root collection is flat,
+///   the listing API returns an array instead of an object.
+///
+/// ```rust,no_run
+/// use osauth::PaginatedResource;
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, PaginatedResource)]
+/// #[collection_name = "servers"]
+/// pub struct Server {
+///     #[resource_id]
+///     pub id: String,
+///     pub name: String,
+/// }
+/// ```
 ///
 /// The trait and its dependencies can be implemented manually like this:
 ///

@@ -2,7 +2,7 @@
 
 name = "osauth"
 description = "Asynchronous OpenStack session and authentication"
-version = "0.4.1"  # remember to update html_root_url
+version = "0.4.2"  # remember to update html_root_url
 authors = ["Dmitry Tantsur <dtantsur@protonmail.com>"]
 homepage = "https://github.com/dtantsur/rust-osauth"
 repository = "https://github.com/dtantsur/rust-osauth"
@@ -31,7 +31,7 @@ futures = { version = "^0.3", optional = true }
 http = "^0.2"
 lazy_static = "^1.4"
 log = "^0.4"
-osauth-derive = { version = "^0.1", optional = true }
+osauth-derive = { version = "^0.1.1", optional = true }
 percent-encoding = "^2.2"
 pin-project = "^1.0"
 reqwest = { version = "^0.11", default-features = false, features = ["gzip", "json", "stream"] }

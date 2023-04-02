@@ -375,7 +375,7 @@ impl Session {
     /// let session = osauth::Session::from_env()
     ///     .await
     ///     .expect("Failed to create an identity provider from the environment");
-    /// let candidates = vec![osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
+    /// let candidates = [osauth::ApiVersion(1, 2), osauth::ApiVersion(1, 42)];
     /// let maybe_version = session
     ///     .pick_api_version(osauth::services::COMPUTE, candidates)
     ///     .await?;

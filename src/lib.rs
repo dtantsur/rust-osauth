@@ -1,4 +1,4 @@
-// Copyright 2019 Dmitry Tantsur <dtantsur@protonmail.com>
+// Copyright 2019-2023 Dmitry Tantsur <dtantsur@protonmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@
 
 #![crate_name = "osauth"]
 #![crate_type = "lib"]
-#![doc(html_root_url = "https://docs.rs/osauth/0.4.1")]
+#![doc(html_root_url = "https://docs.rs/osauth/0.4.2")]
 // NOTE: we do not use generic deny(warnings) to avoid breakages with new
 // versions of the compiler. Add more warnings here as you discover them.
 // Taken from https://github.com/rust-unofficial/patterns/
