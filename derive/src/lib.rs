@@ -1,3 +1,4 @@
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -79,7 +80,7 @@ fn get_collection_name(input: &syn::DeriveInput) -> String {
         }
     }
 
-    let ident = input.ident.to_string();
+    let ident = input.ident.to_string().to_case(Case::Snake);
     if ident.chars().last().expect("empty collection_name") == 's' {
         format!("{}es", ident)
     } else {
