@@ -13,8 +13,14 @@ pub fn paginated_resource_macro_derive(input: TokenStream) -> TokenStream {
 
     let class_name = &input.ident;
     let vis = &input.vis;
-    let maybe_collection_name = get_collection_name(&input);
-    let (id_name, id_type) = get_id_field(&input.data);
+    let maybe_collection_name = match get_collection_name(&input) {
+        Ok(name) => name,
+        Err(err) => return err.into_compile_error().into(),
+    };
+    let (id_name, id_type) = match get_id_field(&input) {
+        Ok(tpl) => tpl,
+        Err(err) => return err.into_compile_error().into(),
+    };
 
     if let Some(collection_name) = maybe_collection_name {
         let collection_ident = syn::Ident::new(&collection_name, Span::call_site());
@@ -65,44 +71,61 @@ fn has_attr(attrs: &Vec<syn::Attribute>, attr: &str) -> bool {
     attrs.iter().find(|x| x.path.is_ident(attr)).is_some()
 }
 
-fn get_id_field(data: &syn::Data) -> (&syn::Ident, &syn::Type) {
-    if let syn::Data::Struct(ref st) = data {
+fn get_id_field(input: &syn::DeriveInput) -> syn::Result<(&syn::Ident, &syn::Type)> {
+    if let syn::Data::Struct(ref st) = input.data {
         if let syn::Fields::Named(ref fs) = st.fields {
             for field in &fs.named {
                 if has_attr(&field.attrs, "resource_id") {
-                    return (
+                    return Ok((
                         field.ident.as_ref().expect("no ident for resource_id"),
                         &field.ty,
-                    );
+                    ));
                 }
             }
         } else {
-            panic!("only named fields are supported for derive(PaginatedResource)");
+            return Err(syn::Error::new_spanned(
+                input,
+                "only named fields are supported for derive(PaginatedResource)",
+            ));
         }
     } else {
-        panic!("only structs are supported for derive(PaginatedResource)");
+        return Err(syn::Error::new_spanned(
+            input,
+            "only structs are supported for derive(PaginatedResource)",
+        ));
     }
 
-    panic!("#[resource_id] missing");
+    Err(syn::Error::new_spanned(input, "#[resource_id] missing"))
 }
 
-fn get_collection_name(input: &syn::DeriveInput) -> Option<String> {
+fn get_collection_name(input: &syn::DeriveInput) -> syn::Result<Option<String>> {
     let mut flat = false;
     let mut maybe_name = None;
     for attr in &input.attrs {
         match attr.parse_meta() {
             Ok(syn::Meta::NameValue(nv)) if nv.path.is_ident("collection_name") => {
                 if flat {
-                    panic!("collection_name and flat_collection cannot be used together");
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "collection_name and flat_collection cannot be used together",
+                    ));
                 }
                 match nv.lit {
                     syn::Lit::Str(s) => maybe_name = Some(s.value()),
-                    _ => panic!("collection_name must be a string"),
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            attr,
+                            "collection_name must be a string",
+                        ))
+                    }
                 }
             }
             Ok(syn::Meta::Path(p)) if p.is_ident("flat_collection") => {
                 if maybe_name.is_some() {
-                    panic!("collection_name and flat_collection cannot be used together");
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "collection_name and flat_collection cannot be used together",
+                    ));
                 }
                 flat = true;
             }
@@ -110,7 +133,7 @@ fn get_collection_name(input: &syn::DeriveInput) -> Option<String> {
         }
     }
 
-    if flat {
+    Ok(if flat {
         None
     } else {
         maybe_name.or_else(|| {
@@ -123,5 +146,5 @@ fn get_collection_name(input: &syn::DeriveInput) -> Option<String> {
                 },
             )
         })
-    }
+    })
 }
