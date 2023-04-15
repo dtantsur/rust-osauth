@@ -4,7 +4,6 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TS2};
 use quote::{quote, ToTokens};
-use syn;
 
 #[proc_macro_derive(
     PaginatedResource,
@@ -69,7 +68,7 @@ pub fn paginated_resource_macro_derive(input: TokenStream) -> TokenStream {
     .into()
 }
 
-fn get_attr<'a>(attrs: &'a Vec<syn::Attribute>, attr: &str) -> Option<&'a syn::Attribute> {
+fn get_attr<'a>(attrs: &'a [syn::Attribute], attr: &str) -> Option<&'a syn::Attribute> {
     attrs.iter().find(|x| x.path.is_ident(attr))
 }
 
