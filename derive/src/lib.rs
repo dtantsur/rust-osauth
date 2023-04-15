@@ -74,6 +74,7 @@ fn get_attr<'a>(attrs: &'a Vec<syn::Attribute>, attr: &str) -> Option<&'a syn::A
 }
 
 fn get_id_field(input: &syn::DeriveInput) -> syn::Result<(&syn::Ident, &syn::Type)> {
+    let mut default_id = None;
     if let syn::Data::Struct(ref st) = input.data {
         if let syn::Fields::Named(ref fs) = st.fields {
             for field in &fs.named {
@@ -82,6 +83,12 @@ fn get_id_field(input: &syn::DeriveInput) -> syn::Result<(&syn::Ident, &syn::Typ
                         field.ident.as_ref().expect("no ident for resource_id"),
                         &field.ty,
                     ));
+                }
+
+                if let Some(id) = field.ident.as_ref() {
+                    if id == "id" {
+                        default_id = Some((id, &field.ty));
+                    }
                 }
             }
         } else {
@@ -97,7 +104,11 @@ fn get_id_field(input: &syn::DeriveInput) -> syn::Result<(&syn::Ident, &syn::Typ
         ));
     }
 
-    Err(syn::Error::new_spanned(input, "#[resource_id] missing"))
+    if let Some(id) = default_id {
+        Ok(id)
+    } else {
+        Err(syn::Error::new_spanned(input, "#[resource_id] missing"))
+    }
 }
 
 fn get_collection_name(input: &syn::DeriveInput) -> syn::Result<Option<String>> {
