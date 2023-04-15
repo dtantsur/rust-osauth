@@ -1,7 +1,9 @@
+use std::fmt;
+
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::quote;
+use proc_macro2::{Span, TokenStream as TS2};
+use quote::{quote, ToTokens};
 use syn;
 
 #[proc_macro_derive(
@@ -67,15 +69,15 @@ pub fn paginated_resource_macro_derive(input: TokenStream) -> TokenStream {
     .into()
 }
 
-fn has_attr(attrs: &Vec<syn::Attribute>, attr: &str) -> bool {
-    attrs.iter().find(|x| x.path.is_ident(attr)).is_some()
+fn get_attr<'a>(attrs: &'a Vec<syn::Attribute>, attr: &str) -> Option<&'a syn::Attribute> {
+    attrs.iter().find(|x| x.path.is_ident(attr))
 }
 
 fn get_id_field(input: &syn::DeriveInput) -> syn::Result<(&syn::Ident, &syn::Type)> {
     if let syn::Data::Struct(ref st) = input.data {
         if let syn::Fields::Named(ref fs) = st.fields {
             for field in &fs.named {
-                if has_attr(&field.attrs, "resource_id") {
+                if get_attr(&field.attrs, "resource_id").is_some() {
                     return Ok((
                         field.ident.as_ref().expect("no ident for resource_id"),
                         &field.ty,
@@ -147,4 +149,110 @@ fn get_collection_name(input: &syn::DeriveInput) -> syn::Result<Option<String>> 
             )
         })
     })
+}
+
+fn fail<S, M>(span: S, message: M) -> TokenStream
+where
+    S: ToTokens,
+    M: fmt::Display,
+{
+    syn::Error::new_spanned(span, message)
+        .into_compile_error()
+        .into()
+}
+
+#[proc_macro_derive(QueryItem, attributes(query_item))]
+pub fn query_item_macro_derive(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    let class_name = &input.ident;
+    let fragments = match query_item_fragments(
+        class_name,
+        match input.data {
+            syn::Data::Enum(e) => e,
+            _ => {
+                return fail(input, "derive(QueryItem) only works on enums");
+            }
+        },
+    ) {
+        Ok(f) => f,
+        Err(e) => return e.into_compile_error().into(),
+    };
+
+    quote! {
+        impl ::osauth::QueryItem for #class_name {
+            fn query_item(&self) -> ::std::result::Result<(&str, ::std::borrow::Cow<str>), ::osauth::Error> {
+                Ok(match self {
+                    #(#fragments),*
+                })
+            }
+        }
+    }.into()
+}
+
+fn query_item_fragments(class_name: &syn::Ident, input: syn::DataEnum) -> syn::Result<Vec<TS2>> {
+    let mut result = Vec::with_capacity(input.variants.len());
+    for var in input.variants {
+        let name = if let Some(attr) = get_attr(&var.attrs, "query_item") {
+            match attr.parse_meta()? {
+                syn::Meta::NameValue(nv) => match nv.lit {
+                    syn::Lit::Str(s) => s.value(),
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            attr,
+                            "query_item value must be a string",
+                        ));
+                    }
+                },
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "query_item must have a value",
+                    ));
+                }
+            }
+        } else {
+            var.ident.to_string().to_case(Case::Snake)
+        };
+        match var.fields {
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                let field = fields.unnamed.into_iter().next().unwrap();
+                result.push(query_item_fragment(class_name, var.ident, &name, field));
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    var,
+                    "each variant must have exactly one unnamed type",
+                ));
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn query_item_fragment(
+    class_name: &syn::Ident,
+    ident: syn::Ident,
+    name: &str,
+    field: syn::Field,
+) -> TS2 {
+    let ty = field.ty;
+    match ty {
+        syn::Type::Path(tp) if tp.qself.is_none() && tp.path.is_ident("String") => {
+            quote! {
+                #class_name::#ident(var) => (#name, ::std::borrow::Cow::Borrowed(var.as_str()))
+            }
+        }
+        syn::Type::Path(tp) if tp.qself.is_none() && tp.path.is_ident("bool") => {
+            quote! {
+                #class_name::#ident(var) => {
+                    let value = if *var { "true" } else { "false" };
+                    (#name, ::std::borrow::Cow::Borrowed(value))
+                }
+            }
+        }
+        _ => quote! {
+            #class_name::#ident(var) => (#name, var.to_string().into())
+        },
+    }
 }
