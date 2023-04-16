@@ -138,3 +138,4 @@ pub use crate::session::{ServiceRequestBuilder, Session};
 pub use crate::stream::PaginatedResource;
 #[cfg(feature = "stream")]
 pub use osauth_derive::PaginatedResource;
+pub use osauth_derive::QueryItem;

@@ -19,7 +19,7 @@ default = ["native-tls", "stream"]
 default-rustls = ["rustls", "stream"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls-tls"]
-stream = ["async-stream", "futures", "osauth-derive"]
+stream = ["async-stream", "futures"]
 
 [dependencies]
 
@@ -31,7 +31,7 @@ futures = { version = "^0.3", optional = true }
 http = "^0.2"
 lazy_static = "^1.4"
 log = "^0.4"
-osauth-derive = { version = "^0.1.1", optional = true }
+osauth-derive = { version = "^0.1.2" }
 percent-encoding = "^2.2"
 pin-project = "^1.0"
 reqwest = { version = "^0.11", default-features = false, features = ["gzip", "json", "stream"] }
