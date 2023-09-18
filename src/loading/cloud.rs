@@ -52,6 +52,8 @@ pub(crate) struct Auth {
     pub(crate) username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) user_domain_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) user_id: Option<String>,
 }
 
 /// Cloud configuration.

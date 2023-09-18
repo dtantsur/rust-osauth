@@ -50,6 +50,7 @@ fn _from_env<E: Environment>(env: E) -> Result<CloudConfig, Error> {
         token: env.get("OS_TOKEN").ok(),
         username: env.get("OS_USERNAME").ok(),
         user_domain_name: env.get("OS_USER_DOMAIN_NAME").ok(),
+        user_id: env.get("OS_USER_ID").ok(),
     };
 
     let config = CloudConfig {
