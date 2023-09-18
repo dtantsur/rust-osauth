@@ -51,6 +51,9 @@ fn _from_env<E: Environment>(env: E) -> Result<CloudConfig, Error> {
         username: env.get("OS_USERNAME").ok(),
         user_domain_name: env.get("OS_USER_DOMAIN_NAME").ok(),
         user_id: env.get("OS_USER_ID").ok(),
+        application_credential_id: env.get("OS_APPLICATION_CREDENTIAL_ID").ok(),
+        application_credential_secret: env.get("OS_APPLICATION_CREDENTIAL_SECRET").ok(),
+        application_credential_name: env.get("OS_APPLICATION_CREDENTIAL_NAME").ok(),
     };
 
     let config = CloudConfig {
