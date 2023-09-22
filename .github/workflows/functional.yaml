@@ -8,23 +8,20 @@ jobs:
       matrix:
         name: ["master"]
         openstack_version: ["master"]
-        ubuntu_version: ["20.04"]
+        ubuntu_version: ["22.04"]
         include:
+          - name: "antelope"
+            openstack_version: "stable/2023.1"
+            ubuntu_version: "22.04"
+          - name: "zed"
+            openstack_version: "stable/zed"
+            ubuntu_version: "22.04"
+          - name: "yoga"
+            openstack_version: "stable/yoga"
+            ubuntu_version: "20.04"
           - name: "xena"
             openstack_version: "stable/xena"
             ubuntu_version: "20.04"
-          - name: "wallaby"
-            openstack_version: "stable/wallaby"
-            ubuntu_version: "20.04"
-          - name: "victoria"
-            openstack_version: "stable/victoria"
-            ubuntu_version: "20.04"
-          - name: "ussuri"
-            openstack_version: "stable/ussuri"
-            ubuntu_version: "18.04"
-          - name: "train"
-            openstack_version: "stable/train"
-            ubuntu_version: "18.04"
     runs-on: ubuntu-${{ matrix.ubuntu_version }}
     name: Deploy OpenStack ${{ matrix.name }} and run examples
     steps:
