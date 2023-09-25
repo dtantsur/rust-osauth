@@ -185,14 +185,12 @@ struct Message {
 impl Message {
     fn convert(self, recursive: bool) -> Option<String> {
         if let Some(value) = self.message.or(self.faultstring).or(self.title) {
-            println!("Normal {}", value);
             Some(value)
         } else if recursive {
             if let Some(json) = self.error_message {
-                return serde_json::from_str::<Message>(&json).ok().and_then(|msg| {
-                    println!("submessage {:?}", msg);
-                    msg.convert(false)
-                });
+                serde_json::from_str::<Message>(&json)
+                    .ok()
+                    .and_then(|msg| msg.convert(false))
             } else {
                 None
             }
