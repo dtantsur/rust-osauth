@@ -14,7 +14,7 @@
 
 //! Authentication using Identity API v3.
 //!
-//! Currently only supports [Password](struct.Password.html) authentication.
+//! Currently supports [Password](struct.Password.html) and [ApplicationCredential] authentication.
 //! Identity API v2 is not and will not be supported.
 
 mod application_credential;
