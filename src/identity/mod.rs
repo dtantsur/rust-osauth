@@ -14,9 +14,10 @@
 
 //! Authentication using Identity API v3.
 //!
-//! Currently only supports [Password](struct.Password.html) authentication.
+//! Currently supports [Password](struct.Password.html) and [ApplicationCredential] authentication.
 //! Identity API v2 is not and will not be supported.
 
+mod application_credential;
 mod internal;
 mod password;
 pub(crate) mod protocol;
@@ -24,6 +25,7 @@ mod token;
 
 use super::common::IdOrName;
 
+pub use self::application_credential::ApplicationCredential;
 pub use self::password::Password;
 pub use self::token::Token;
 

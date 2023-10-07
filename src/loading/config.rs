@@ -386,6 +386,30 @@ hK9jLBzNvo8qzKqaGfnGieuLeXCqFDA=
     }
 
     #[test]
+    fn test_from_config_application_credential() {
+        let clouds = to_yaml(
+            r#"clouds:
+  cloud_name:
+    auth_type: v3applicationcredential
+    auth:
+      auth_url: http://url1
+      application_credential_id: appid1
+      application_credential_secret: appidsecret1
+    region_name: region1"#,
+        );
+
+        let _ = from_files(
+            "cloud_name",
+            clouds,
+            with_one_key("public-clouds"),
+            with_one_key("clouds"),
+        )
+        .unwrap()
+        .create_session_config()
+        .unwrap();
+    }
+
+    #[test]
     fn test_inject_profiles_error() {
         let mut clouds_data = to_yaml(
             r#"

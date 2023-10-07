@@ -26,7 +26,7 @@ use super::config::from_config;
 use super::env::from_env;
 use crate::client::AuthenticatedClient;
 use crate::common::IdOrName;
-use crate::identity::{Password, Scope, Token};
+use crate::identity::{ApplicationCredential, Password, Scope, Token};
 use crate::{AuthType, BasicAuth, Error, ErrorKind, InterfaceType, NoAuth, Session};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -52,6 +52,14 @@ pub(crate) struct Auth {
     pub(crate) username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) user_domain_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) application_credential_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) application_credential_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) application_credential_name: Option<String>,
 }
 
 /// Cloud configuration.
@@ -169,6 +177,38 @@ impl Auth {
         Ok(id)
     }
 
+    fn create_application_credential(self) -> Result<ApplicationCredential, Error> {
+        let auth_url = require(
+            self.auth_url,
+            "Password authentication requires an authentication URL",
+        )?;
+        let app_secret = require(
+            self.application_credential_secret,
+            "Application credential requires a secret",
+        )?;
+
+        if let Some(app_id) = self.application_credential_id {
+            ApplicationCredential::new(auth_url, app_id, app_secret)
+        } else if let Some(app_name) = self.application_credential_name {
+            if self.username.is_some() && self.user_id.is_none() {
+                return Err(Error::new(
+                    ErrorKind::InvalidConfig,
+                    "Specifying Application Credential by name currently requires specifying the user ID",
+                ));
+            }
+            let user_id = require(
+                self.user_id,
+                "Application Credential authentication by name requires the user ID",
+            )?;
+            ApplicationCredential::with_user_id(auth_url, app_name, app_secret, user_id)
+        } else {
+            Err(Error::new(
+                ErrorKind::InvalidConfig,
+                "Application Credential requires an id or a name",
+            ))
+        }
+    }
+
     fn create_auth(self, auth_type: Option<String>) -> Result<Arc<dyn AuthType>, Error> {
         let auth_type = auth_type.unwrap_or_else(|| {
             if self.token.is_some() {
@@ -185,6 +225,8 @@ impl Auth {
             Arc::new(self.create_token_auth()?)
         } else if auth_type == "http_basic" {
             Arc::new(self.create_basic_auth()?)
+        } else if auth_type == "v3applicationcredential" {
+            Arc::new(self.create_application_credential()?)
         } else if auth_type == "none" {
             Arc::new(self.create_none_auth()?)
         } else {

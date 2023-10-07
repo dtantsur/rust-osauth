@@ -30,6 +30,16 @@ pub struct UserAndPassword {
     pub domain: Option<IdOrName>,
 }
 
+/// Application credential.
+#[derive(Clone, Debug, Serialize)]
+pub struct ApplicationCredential {
+    #[serde(flatten)]
+    pub id: IdOrName,
+    pub secret: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub user: Option<IdOrName>,
+}
+
 /// Authentication identity.
 #[derive(Clone, Debug)]
 pub enum Identity {
@@ -37,6 +47,8 @@ pub enum Identity {
     Password(UserAndPassword),
     /// Authentication with a token.
     Token(String),
+    /// Authentication with an application credential.
+    ApplicationCredential(ApplicationCredential),
 }
 
 /// A reference to a project in a domain.
@@ -152,6 +164,10 @@ impl Serialize for Identity {
                 inner.serialize_field("methods", &["token"])?;
                 inner.serialize_field("token", &TokenAuth { id: token })?;
             }
+            Identity::ApplicationCredential(ref cred) => {
+                inner.serialize_field("methods", &["application_credential"])?;
+                inner.serialize_field("application_credential", &cred)?;
+            }
         }
         inner.end()
     }
@@ -254,6 +270,39 @@ mod test {
     }
 }"#;
 
+    const APPLICATION_CREDENTIAL_ID: &str = r#"
+{
+    "auth": {
+        "identity": {
+            "methods": [
+                "application_credential"
+            ],
+            "application_credential": {
+                "id": "abcdef",
+                "secret": "shhhh"
+            }
+        }
+    }
+}"#;
+
+    const APPLICATION_CREDENTIAL_NAME: &str = r#"
+{
+    "auth": {
+        "identity": {
+            "methods": [
+                "application_credential"
+            ],
+            "application_credential": {
+                "name": "abcdef",
+                "secret": "shhhh",
+                "user": {
+                    "id": "a6b3c6e7a6d"
+                }
+            }
+        }
+    }
+}"#;
+
     #[test]
     fn test_password_name_unscoped() {
         let value = AuthRoot {
@@ -308,5 +357,35 @@ mod test {
             },
         };
         test::compare(TOKEN_SCOPED_WITH_NAME, value);
+    }
+
+    #[test]
+    fn test_application_credential_id() {
+        let value = AuthRoot {
+            auth: Auth {
+                identity: Identity::ApplicationCredential(ApplicationCredential {
+                    id: IdOrName::Id("abcdef".to_string()),
+                    secret: "shhhh".to_string(),
+                    user: None,
+                }),
+                scope: None,
+            },
+        };
+        test::compare(APPLICATION_CREDENTIAL_ID, value);
+    }
+
+    #[test]
+    fn test_application_credential_name() {
+        let value = AuthRoot {
+            auth: Auth {
+                identity: Identity::ApplicationCredential(ApplicationCredential {
+                    id: IdOrName::Name("abcdef".to_string()),
+                    secret: "shhhh".to_string(),
+                    user: Some(IdOrName::Id("a6b3c6e7a6d".into())),
+                }),
+                scope: None,
+            },
+        };
+        test::compare(APPLICATION_CREDENTIAL_NAME, value);
     }
 }
