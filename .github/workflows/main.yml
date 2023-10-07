@@ -13,7 +13,7 @@ jobs:
           - "--no-default-features"
           - "--no-default-features --features default-rustls"
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust
       run: |
         rustup update ${{ matrix.rust }} --no-self-update
@@ -27,7 +27,7 @@ jobs:
       matrix:
         rust: [stable, nightly, 1.64.0]
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust
       run: |
         rustup update ${{ matrix.rust }} --no-self-update
@@ -40,7 +40,7 @@ jobs:
     name: Formatting
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
     - name: Install Rust
       run: |
         rustup update stable --no-self-update
@@ -52,7 +52,7 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
       - name: Install Rust
         run: |
           rustup update stable --no-self-update
