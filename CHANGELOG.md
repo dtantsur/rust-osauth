@@ -1,5 +1,18 @@
 # Change Log
 
+## 0.4.3 (2023-10-15)
+
+#### Bug Fixes
+
+* **derive:**  use compile errors instead of panics ([0e2d877e](https://github.com/dtantsur/rust-openstack/commit/0e2d877e70fb2131dff56eaaea1037ecf21c8eb4))
+
+#### Features
+
+*    add support for application credentials
+* **derive:**
+  *  default resource_id to id when deriving PaginatedResource ([1b990acd](https://github.com/dtantsur/rust-openstack/commit/1b990acdced52069e03b0028d336dad223a76ddf))
+  *  derive(QueryItem) ([2196c7aa](https://github.com/dtantsur/rust-openstack/commit/2196c7aa26d79ec223d5340e903b90d1434e55a7))
+
 ## 0.4.2 (2023-04-02)
 
 #### Bug Fixes
