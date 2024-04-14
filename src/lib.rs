@@ -32,7 +32,7 @@
 //!
 //! # Requirements
 //!
-//! This crate requires Rust 2021 edition and rustc version 1.64.0 or newer.
+//! This crate requires Rust 2021 edition and rustc version 1.65.0 or newer.
 //!
 //! OpenStack releases starting with Train are officially supported, although support for
 //! releases older than 1.5 years is best-effort and may be dropped without a prior warning
@@ -87,7 +87,6 @@
     overflowing_literals,
     path_statements,
     patterns_in_fns_without_body,
-    private_in_public,
     trivial_casts,
     trivial_numeric_casts,
     unconditional_recursion,
