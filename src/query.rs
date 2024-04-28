@@ -36,25 +36,50 @@ pub trait QueryItem {
 ///
 /// #[derive(Debug)]
 /// enum MyQueryItem {
-///     Foo(String),
-///     Bar(String),
+///     Str(String),
+///     Bool(bool),
+///     Int(i32),
 /// }
 ///
 /// impl QueryItem for MyQueryItem {
 ///     fn query_item(&self) -> Result<(&str, Cow<str>), Error> {
 ///         Ok(match self {
-///             MyQueryItem::Foo(s) => ("foo", Cow::Borrowed(s)),
-///             MyQueryItem::Bar(s) => ("bar", Cow::Borrowed(s)),
+///             MyQueryItem::Str(s) => ("str", Cow::Borrowed(s)),
+///             MyQueryItem::Bool(s) => ("bool", Cow::Owned(s.to_string())),
+///             MyQueryItem::Int(s) => ("answer", Cow::Owned(s.to_string())),
 ///         })
 ///     }
 /// }
 ///
 /// let mut query = Query::default();
-/// query.push(MyQueryItem::Bar("bar1".into()));
-/// query.push(MyQueryItem::Foo("foo1".into()));
-/// query.push(MyQueryItem::Foo("foo2".into()));
+/// query.push(MyQueryItem::Bool(true));
+/// query.push(MyQueryItem::Str("foo1".into()));
+/// query.push(MyQueryItem::Int(42));
+/// query.push(MyQueryItem::Str("foo2".into()));
 /// let query_string = serde_urlencoded::to_string(query).expect("invalid query");
-/// assert_eq!(&query_string, "bar=bar1&foo=foo1&foo=foo2");
+/// assert_eq!(&query_string, "bool=true&str=foo1&answer=42&str=foo2");
+/// ```
+///
+/// It's usually better to derive `QueryItem` implementations:
+///
+/// ```rust
+/// use osauth::{Error, Query, QueryItem};
+///
+/// #[derive(Debug, QueryItem)]
+/// enum MyQueryItem {
+///     Str(String),
+///     Bool(bool),
+///     #[query_item = "answer"]
+///     Int(i32),
+/// }
+///
+/// let mut query = Query::default();
+/// query.push(MyQueryItem::Bool(true));
+/// query.push(MyQueryItem::Str("foo1".into()));
+/// query.push(MyQueryItem::Int(42));
+/// query.push(MyQueryItem::Str("foo2".into()));
+/// let query_string = serde_urlencoded::to_string(query).expect("invalid query");
+/// assert_eq!(&query_string, "bool=true&str=foo1&answer=42&str=foo2");
 /// ```
 ///
 /// `Query` helps avoiding creating very large structures when only few query items are
