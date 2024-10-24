@@ -1,5 +1,19 @@
 # Change Log
 
+## 0.5.0 (2024-10-24)
+
+#### Features
+
+*   update reqwest to 0.12 ([ff93a4e6](https://github.com/dtantsur/rust-openstack/commit/ff93a4e62eccf6a2e7d810c1a17e053078b3fd09))
+
+#### Breaking Changes
+
+*   the `BLOCK_STORAGE` type no longer works with `volumev3` entries in the catalog
+
+#### Bug Fixes
+
+*   use service type block-storage for volume v3 ([c728f682](https://github.com/dtantsur/rust-openstack/commit/c728f682932a00a53d4a750b45d9af2f2b2ca2e2))
+
 ## 0.4.3 (2023-10-15)
 
 #### Bug Fixes
