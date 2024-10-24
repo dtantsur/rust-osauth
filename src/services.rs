@@ -132,15 +132,20 @@ pub struct GenericService {
     major_version: VersionSelector,
 }
 
-/// Compute service.
+/// Block storage service (v3).
 #[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
-pub struct ComputeService;
+pub struct BlockStorageService;
 
 service! {
     #[doc = "Bare Metal service."]
     BAREMETAL: BareMetalService -> "baremetal", header "x-openstack-ironic-api-version"
 }
+
+/// Compute service.
+#[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
+pub struct ComputeService;
 
 service! {
     #[doc = "Image service."]
@@ -155,11 +160,6 @@ service! {
 service! {
     #[doc = "Object Storage service."]
     OBJECT_STORAGE: ObjectStorageService -> "object-store", discovery false
-}
-
-service! {
-    #[doc = "Block Storage service (v3)."]
-    BLOCK_STORAGE: BlockStorageService -> "volumev3"
 }
 
 impl GenericService {
@@ -187,10 +187,27 @@ impl ServiceType for GenericService {
     }
 }
 
+impl BlockStorageService {
+    /// Create a Compute service type.
+    pub const fn new() -> BlockStorageService {
+        BlockStorageService
+    }
+}
+
 impl ComputeService {
     /// Create a Compute service type.
     pub const fn new() -> ComputeService {
         ComputeService
+    }
+}
+
+impl ServiceType for BlockStorageService {
+    fn catalog_type(&self) -> &'static str {
+        "block-storage"
+    }
+
+    fn major_version_supported(&self, version: ApiVersion) -> bool {
+        version.0 == 3
     }
 }
 
@@ -213,6 +230,9 @@ impl VersionedService for ComputeService {
         )
     }
 }
+
+/// Block storage service (v3).
+pub const BLOCK_STORAGE: BlockStorageService = BlockStorageService::new();
 
 /// Compute service.
 pub const COMPUTE: ComputeService = ComputeService::new();
