@@ -307,13 +307,14 @@ impl EndpointFilters {
 pub mod test {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
+    use std::mem::size_of;
 
     use super::{InterfaceType, ValidInterfaces};
     use InterfaceType::*;
 
     #[test]
     fn test_valid_interfaces_basics() {
-        assert_eq!(std::mem::size_of::<ValidInterfaces>(), 4);
+        assert_eq!(size_of::<ValidInterfaces>(), 4);
 
         let empty = ValidInterfaces::empty();
         assert_eq!(empty.len(), 0);

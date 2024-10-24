@@ -195,7 +195,7 @@ where
 }
 
 #[cfg(test)]
-pub mod test {
+pub(crate) mod test {
     use serde::{Deserialize, Serialize};
     use serde_json;
 
